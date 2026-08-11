@@ -1,0 +1,138 @@
+"""
+Add these two views to the MyBusTimes Django project so this simulator's
+positions can update a bus on the live MBT map.
+
+The live map (/api/trips/simulated_positions/) reads fleet.sim_lat /
+fleet.sim_lon / fleet.sim_heading plus fleet.current_trip, and only shows a
+bus while its trip has trip_ended=False and now <= trip_end_at.
+
+Setup:
+  1. Copy the views below into the tracking app (e.g. tracking/integration_views.py)
+     and register them. Simplest: paste them into tracking/views.py.
+  2. Add two URL patterns to api/urls.py:
+
+       path("trips/<int:trip_id>/position/", trip_position_view, name="trip-position"),
+       path("trips/<int:trip_id>/end/", end_trip_view, name="trip-end"),
+"""
+
+import json
+from datetime import timedelta
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
+
+from main.models import UserKeys
+from fleet.models import fleet
+from tracking.models import Trip
+
+
+def _auth_user_by_session(session_key):
+    if not session_key:
+        return None
+    try:
+        return UserKeys.objects.select_related("user").get(session_key=session_key).user
+    except UserKeys.DoesNotExist:
+        return None
+
+
+def _can_operate(user, vehicle):
+    op = vehicle.operator
+    if op is None:
+        return False
+    if op.owner == user:
+        return True
+    return op.helper_operator.filter(helper=user).exists()
+
+
+@csrf_exempt
+def trip_position_view(request, trip_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    user = _auth_user_by_session(data.get("session_key"))
+    if user is None:
+        return JsonResponse({"error": "Invalid session key"}, status=401)
+
+    try:
+        trip = Trip.objects.select_related(
+            "trip_vehicle", "trip_vehicle__operator"
+        ).get(trip_id=trip_id)
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "Trip not found"}, status=404)
+
+    vehicle = trip.trip_vehicle
+    if not _can_operate(user, vehicle):
+        return JsonResponse({"error": "Permission denied"}, status=403)
+
+    try:
+        lat = float(data["lat"])
+        lng = float(data["lng"])
+        heading = float(data.get("heading", 0))
+    except (KeyError, TypeError, ValueError):
+        return JsonResponse({"error": "lat, lng required"}, status=400)
+
+    now = timezone.now()
+
+    if trip.trip_end_at is None or trip.trip_end_at < now:
+        trip.trip_end_at = now + timedelta(minutes=15)
+        trip.trip_ended = False
+        trip.trip_missed = False
+        trip.save(update_fields=["trip_end_at", "trip_ended", "trip_missed"])
+
+    vehicle.sim_lat = lat
+    vehicle.sim_lon = lng
+    vehicle.sim_heading = heading
+    vehicle.current_trip = trip
+    vehicle.updated_at = now
+    vehicle.save(
+        update_fields=["sim_lat", "sim_lon", "sim_heading", "current_trip", "updated_at"]
+    )
+
+    return JsonResponse({"status": "ok", "trip_id": trip.trip_id})
+
+
+@csrf_exempt
+def end_trip_view(request, trip_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    user = _auth_user_by_session(data.get("session_key"))
+    if user is None:
+        return JsonResponse({"error": "Invalid session key"}, status=401)
+
+    try:
+        trip = Trip.objects.select_related(
+            "trip_vehicle", "trip_vehicle__operator"
+        ).get(trip_id=trip_id)
+    except Trip.DoesNotExist:
+        return JsonResponse({"error": "Trip not found"}, status=404)
+
+    vehicle = trip.trip_vehicle
+    if not _can_operate(user, vehicle):
+        return JsonResponse({"error": "Permission denied"}, status=403)
+
+    now = timezone.now()
+    trip.trip_end_at = now
+    trip.trip_ended = True
+    trip.save(update_fields=["trip_end_at", "trip_ended"])
+
+    if vehicle.current_trip_id == trip.trip_id:
+        vehicle.sim_lat = None
+        vehicle.sim_lon = None
+        vehicle.sim_heading = None
+        vehicle.current_trip = None
+        vehicle.updated_at = None
+        vehicle.save(
+            update_fields=["sim_lat", "sim_lon", "sim_heading", "current_trip", "updated_at"]
+        )
+
+    return JsonResponse({"status": "ok", "trip_id": trip.trip_id})

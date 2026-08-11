@@ -1,1 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GPS Simulator → MBT</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  #map { position: absolute; inset: 0; background: #0b1220; }
+  .leaflet-container { font: inherit; }
 
+  .panel {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center;
+    background: rgba(15,23,42,.94); color: #e2e8f0;
+    padding: 10px 14px; border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); backdrop-filter: blur(6px);
+    white-space: nowrap; max-width: calc(100vw - 24px);
+  }
+  button {
+    border: 0; border-radius: 8px; padding: 9px 18px; font-size: 14px;
+    font-weight: 600; cursor: pointer; transition: background .15s, transform .05s;
+    color: #0f172a;
+  }
+  button:active { transform: scale(.97); }
+  button.ghost { background:#1e293b; color:#cbd5e1; }
+  #startBtn { background: #22c55e; color: #052e16; }
+  #startBtn.live { background: #ef4444; color: #fff; }
+  .status { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; }
+  .dot.on { background: #22c55e; animation: pulse 1.2s infinite; }
+  .dot.live { background: #ef4444; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+  #busChip {
+    font-size: 12px; background:#1e293b; color:#e2e8f0; border-radius: 999px;
+    padding: 5px 11px; display:none; align-items:center; gap:6px;
+  }
+  #busChip.show { display: inline-flex; }
+  #busChip .x { cursor:pointer; color:#94a3b8; font-weight:700; }
+
+  .debug-toggle { display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; user-select:none; color:#94a3b8; }
+  .debug-toggle input { display:none; }
+  .debug-toggle .sw { width:34px; height:18px; border-radius:9px; background:#334155; position:relative; transition:background .15s; }
+  .debug-toggle .sw::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:#fff; transition:left .15s; }
+  .debug-toggle input:checked + .sw { background:#f59e0b; }
+  .debug-toggle input:checked + .sw::after { left:18px; }
+
+  .readout {
+    position: fixed; left: 12px; bottom: 12px; z-index: 1000;
+    background: rgba(15,23,42,.94); color: #e2e8f0; border-radius: 12px;
+    padding: 13px 15px; font-size: 12px; line-height: 1.7;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4); min-width: 220px; display: none;
+  }
+  .readout.show { display: block; }
+  .readout b { color: #94a3b8; font-weight: 600; }
+  #rMbt.on { color:#ef4444; font-weight:700; }
+
+  .center-btn {
+    position: fixed; right: 12px; bottom: 12px; z-index: 1000;
+    width: 46px; height: 46px; border-radius: 50%;
+    background: rgba(15,23,42,.94); color: #e2e8f0; border: 1px solid #334155;
+    box-shadow: 0 6px 18px rgba(0,0,0,.4); cursor: pointer; font-size: 20px;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+  }
+  .center-btn:hover { background: #1e293b; }
+
+  .direction-icon { transition: transform .25s ease; }
+  .time-tag {
+    white-space: nowrap; display: inline-block;
+    font-size: 10px; font-weight: 700; color: #0f172a;
+    background: #fbbf24; border: 1px solid #b45309; border-radius: 8px;
+    padding: 1px 5px; box-shadow: 0 2px 6px rgba(0,0,0,.35);
+  }
+
+  /* Modals */
+  .overlay {
+    position: fixed; inset: 0; z-index: 2000; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(2,6,23,.72); backdrop-filter: blur(3px);
+  }
+  .overlay.show { display: flex; }
+  .card {
+    background:#0f172a; color:#e2e8f0; border:1px solid #1e293b; border-radius:14px;
+    padding: 24px; width: min(90vw, 380px); box-shadow: 0 20px 60px rgba(0,0,0,.55);
+    max-height: 88vh; overflow: auto;
+  }
+  .card h2 { margin: 0 0 6px; font-size: 18px; }
+  .card p.hint { margin: 0 0 16px; font-size: 12px; color:#94a3b8; }
+  .card .field { margin-bottom: 12px; }
+  .card label { display:block; font-size: 12px; color:#94a3b8; margin-bottom:4px; }
+  .card input, .card select {
+    width:100%; box-sizing:border-box; padding:9px 10px; border-radius:8px;
+    border:1px solid #334155; background:#0b1220; color:#e2e8f0; font-size:14px; outline:none;
+  }
+  .card input:focus, .card select:focus { border-color:#3b82f6; }
+  .card .row { display:flex; gap:8px; align-items:center; margin-top:16px; }
+  .card .row button { flex:1; }
+  #loginErr, #setupErr { color:#f87171; font-size:12px; min-height:16px; margin:10px 0 0; }
+  .lnk { color:#60a5fa; font-size:12px; text-decoration:none; }
+
+  .spinner { display:none; width:16px; height:16px; border:2px solid #334155; border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; }
+  .spinner.show { display:inline-block; }
+  @keyframes spin { to { transform: rotate(360deg) } }
+</style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="panel">
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="statusLabel">Idle</span>
+    </div>
+    <button id="startBtn">Start Tracking</button>
+    <label class="debug-toggle" id="debugToggle" title="Drag the icon to simulate movement">
+      <input type="checkbox" id="debugCheck" />
+      <span class="sw"></span>
+      <span>Drag</span>
+    </label>
+    <span id="busChip"></span>
+    <button class="ghost" id="accountBtn">Account</button>
+  </div>
+
+  <div class="readout" id="readout">
+    <div>Lat &nbsp;<b id="rLat">–</b></div>
+    <div>Lon &nbsp;<b id="rLon">–</b></div>
+    <div>Accuracy &nbsp;<b id="rAcc">–</b></div>
+    <div>Speed &nbsp;<b id="rSpd">–</b></div>
+    <div>Heading &nbsp;<b id="rHead">–</b></div>
+    <div>Points &nbsp;<b id="rPts">0</b></div>
+    <div>Updated &nbsp;<b id="rTime">–</b></div>
+    <div>MBT &nbsp;<b id="rMbt">off</b></div>
+    <div>API &nbsp;<b id="rApi" style="color:#94a3b8">–</b></div>
+  </div>
+
+  <button class="center-btn" id="centerBtn" title="Center on you">◎</button>
+
+  <!-- Login modal -->
+  <div class="overlay" id="loginModal">
+    <div class="card">
+      <h2>MyBusTimes account</h2>
+      <p class="hint">Sign in to choose one of your buses to broadcast on MBT.</p>
+      <div class="field"><label>User ID</label><input id="loginId" autocomplete="off" /></div>
+      <div class="field"><label>Login Code</label><input id="loginCode" type="password" autocomplete="off" /></div>
+      <div class="row">
+        <button id="loginBtn">Sign in<span class="spinner" id="loginSpin"></span></button>
+        <button class="ghost" id="loginCancel">Cancel</button>
+      </div>
+      <p id="loginErr"></p>
+      <div style="margin-top:10px"><a class="lnk" href="https://www.mybustimes.cc/u/TicketerCode" target="_blank" rel="noopener">Get your login code</a></div>
+    </div>
+  </div>
+
+  <!-- Bus setup modal (step 1: company, step 2: vehicle + route) -->
+  <div class="overlay" id="setupModal">
+    <div class="card">
+      <h2 id="setupTitle">Select company</h2>
+      <p class="hint">Signed in as <b id="setupUser">–</b></p>
+
+      <div id="stepCompany">
+        <div class="field"><label>Company</label><select id="opSelect"></select></div>
+        <div class="row">
+          <button id="companyNext">Next<span class="spinner" id="setupSpin"></span></button>
+          <button class="ghost" id="setupSignout">Sign out</button>
+          <button class="ghost" id="setupCancel">Close</button>
+        </div>
+      </div>
+
+      <div id="stepBus" style="display:none">
+        <div class="field"><label>Bus</label><select id="busSelect"></select></div>
+        <div class="field"><label>Route (shown on MBT map)</label><select id="routeSelect"></select></div>
+        <label class="debug-toggle">
+          <input type="checkbox" id="snapCheck" checked />
+          <span class="sw"></span>
+          <span>Snap position to route</span>
+        </label>
+        <div class="field"><label>Trip ends</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="datetime-local" id="endTimeInput" />
+            <button class="ghost" id="endReset" type="button" style="padding:7px 10px;font-size:12px;white-space:nowrap;flex-shrink:0">+1h</button>
+          </div>
+        </div>
+        <div class="row">
+          <button id="setupSave">Use this bus</button>
+          <button class="ghost" id="backCompany">Back</button>
+        </div>
+      </div>
+
+      <p id="setupErr"></p>
+    </div>
+  </div>
+
+<script>
+  const API_BASE = (new URLSearchParams(location.search).get('api') || 'https://staging.mybustimes.cc/api').replace(/\/$/, '');
+
+  // ---------------- Leaflet map ----------------
+  const map = L.map('map', { zoomControl: true }).setView([0, 0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  const icon = L.divIcon({
+    className: '',
+    iconSize: [40, 40],
+    iconAnchor: [20, 22],
+    html: `<div class="direction-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="40" height="40">
+        <path d="M12 1 L17 8 H7 Z" fill="#ffffff" stroke="#1d4ed8" stroke-width="1" />
+        <rect x="4.5" y="7" width="15" height="15.5" rx="2.5" fill="#1d4ed8" stroke="#ffffff" stroke-width="1.5" />
+      </svg>
+    </div>`
+  });
+
+  let marker = null;
+  let path = null;
+  let accCircle = null;
+  let watchId = null;
+  let points = [];
+  let tracking = false;
+  let follow = true;
+  let smoothDir = null;
+
+  let debugMode = false;
+  let simTime = 0;
+  let lastLabelMin = -1;
+  let sessionStartTs = 0;
+  const timeTags = L.layerGroup().addTo(map);
+  const MIN_STEP = 12;
+  const SIM_SPEED = 2;
+
+  // ---------------- MBT state ----------------
+  let auth = loadAuth();
+  let vehicle = null;
+  let routeObj = null;
+  let mbLive = false;
+  let tripId = null;
+  let lastFwd = 0;
+  let lastTrail = null;
+  let fwdTimer = null;
+  let lastKnown = null;
+  let routeGeo = [];
+
+  function loadAuth() {
+    try { return JSON.parse(localStorage.getItem('mbt_auth') || 'null'); } catch (e) { return null; }
+  }
+  function saveAuth() {
+    if (auth) localStorage.setItem('mbt_auth', JSON.stringify(auth));
+    else localStorage.removeItem('mbt_auth');
+  }
+
+  // ---------------- UI refs ----------------
+  const btn = document.getElementById('startBtn');
+  const readout = document.getElementById('readout');
+  const statusLabel = document.getElementById('statusLabel');
+  const dot = document.getElementById('dot');
+  const debugCheck = document.getElementById('debugCheck');
+  const busChip = document.getElementById('busChip');
+  const loginModal = document.getElementById('loginModal');
+  const setupModal = document.getElementById('setupModal');
+  const loginId = document.getElementById('loginId');
+  const loginCode = document.getElementById('loginCode');
+  const loginBtn = document.getElementById('loginBtn');
+  const loginSpin = document.getElementById('loginSpin');
+  const loginErr = document.getElementById('loginErr');
+  const setupErr = document.getElementById('setupErr');
+  const setupSpin = document.getElementById('setupSpin');
+  const setupUser = document.getElementById('setupUser');
+  const setupTitle = document.getElementById('setupTitle');
+  const stepCompany = document.getElementById('stepCompany');
+  const stepBus = document.getElementById('stepBus');
+  const opSelect = document.getElementById('opSelect');
+  const busSelect = document.getElementById('busSelect');
+  const routeSelect = document.getElementById('routeSelect');
+  const snapCheck = document.getElementById('snapCheck');
+  const companyNext = document.getElementById('companyNext');
+  const backCompany = document.getElementById('backCompany');
+
+  let opsCache = [];
+  let fleetCache = [];
+  let routesCache = [];
+
+  function setStatus(t, cls) {
+    statusLabel.textContent = t;
+    dot.className = 'dot' + (cls ? ' ' + cls : '');
+  }
+  function updateChip() {
+    if (auth && vehicle) {
+      busChip.innerHTML = auth.username + ' · ' + vehicle.fleet_number + ' <span class="x" title="change bus">✕</span>';
+      busChip.title = 'Broadcasting as ' + vehicle.fleet_number + ' / ' + vehicle.reg;
+      busChip.classList.add('show');
+    } else {
+      busChip.classList.remove('show');
+    }
+  }
+  function mbReadoutOn(on) {
+    const el = document.getElementById('rMbt');
+    el.textContent = on ? ('LIVE · ' + (vehicle ? vehicle.fleet_number : '') + ' · trip ' + tripId) : 'off';
+    el.classList.toggle('on', !!on);
+  }
+
+  // ---------------- MBT API ----------------
+  function setApiLine(text, ok) {
+    const el = document.getElementById('rApi');
+    const t = new Date().toLocaleTimeString() + '  ' + text;
+    el.textContent = text;
+    el.style.color = ok ? '#22c55e' : '#f87171';
+    el.title = t;
+    console.log(t);
+  }
+
+  async function apiReq(path, data, label) {
+    const tag = label || path;
+    let resp;
+    try {
+      resp = await fetch(API_BASE + path, {
+        method: data ? 'POST' : 'GET',
+        headers: data ? { 'Content-Type': 'application/json' } : undefined,
+        body: data ? JSON.stringify(data) : undefined
+      });
+    } catch (e) {
+      setApiLine(tag + ' → network/CORS error', false);
+      throw new Error('Network/CORS error — open the page over HTTPS; check your browser console');
+    }
+    let json = {};
+    try { json = await resp.json(); } catch (e) {}
+    setApiLine(tag + ' → ' + resp.status, resp.ok);
+    if (!resp.ok) throw new Error(json.error || json.detail || ('HTTP ' + resp.status));
+    return json;
+  }
+
+  async function doLogin() {
+    const uid = loginId.value.trim();
+    const code = loginCode.value.trim();
+    loginErr.textContent = '';
+    if (!uid || !code) { loginErr.textContent = 'Enter your User ID and Login Code.'; return; }
+    loginSpin.classList.add('show');
+    try {
+      const res = await apiReq('/user/', { user_id: uid, code: code }, 'login');
+      auth = { username: res.username || 'user', user_id: res.id, session_key: res.session_key };
+      saveAuth();
+      await openSetup();
+      loginModal.classList.remove('show');
+    } catch (e) {
+      loginErr.textContent = 'Sign-in failed: ' + e.message;
+    } finally {
+      loginSpin.classList.remove('show');
+    }
+  }
+
+  async function openSetup() {
+    setupErr.textContent = '';
+    if (!auth) { loginModal.classList.add('show'); return; }
+    setupModal.classList.add('show');
+    showStep('company');
+    setupUser.textContent = auth.username;
+    setupSpin.classList.add('show');
+    try {
+      const res = await apiReq('/user/operators/', { session_key: auth.session_key }, 'operators');
+      opsCache = res.operators || [];
+      opSelect.innerHTML = '';
+      if (!opsCache.length) { setupErr.textContent = 'No companies found on this account.'; setupSpin.classList.remove('show'); return; }
+      opsCache.forEach(op => {
+        const o = document.createElement('option');
+        o.value = op.id;
+        o.textContent = op.operator_slug + (op.operator_code ? ' (' + op.operator_code + ')' : '');
+        opSelect.appendChild(o);
+      });
+    } catch (e) {
+      setupErr.textContent = 'Could not load account: ' + e.message;
+    } finally {
+      setupSpin.classList.remove('show');
+    }
+  }
+
+  function showStep(name) {
+    const onCompany = name === 'company';
+    stepCompany.style.display = onCompany ? '' : 'none';
+    stepBus.style.display = onCompany ? 'none' : '';
+    setupTitle.textContent = onCompany ? 'Select company' : 'Select bus & route';
+    if (!onCompany) resetEndTime();
+  }
+
+  function resetEndTime() {
+    const d = new Date(Date.now() + 3600000);
+    const pad = n => String(n).padStart(2, '0');
+    document.getElementById('endTimeInput').value =
+      d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  async function onCompanyNext() {
+    setupErr.textContent = '';
+    if (!opSelect.value) { setupErr.textContent = 'Pick a company.'; return; }
+    setupSpin.classList.add('show');
+    await onOperatorChange();
+    setupSpin.classList.remove('show');
+    if (!setupErr.textContent) showStep('bus');
+  }
+
+  async function onOperatorChange() {
+    const opId = parseInt(opSelect.value);
+    fleetCache = [];
+    routesCache = [];
+    routeGeo = [];
+    busSelect.innerHTML = '<option value="">Loading…</option>';
+    routeSelect.innerHTML = '<option value="">Loading…</option>';
+    try {
+      const [f, r] = await Promise.all([
+        apiReq('/user/operator/' + opId + '/fleet/', { session_key: auth.session_key }, 'fleet'),
+        apiReq('/user/operator/' + opId + '/routes/', { session_key: auth.session_key }, 'routes')
+      ]);
+      fleetCache = (f.fleet || []).filter(v => v.in_service !== false);
+      routesCache = r.routes || [];
+      busSelect.innerHTML = '';
+      if (!fleetCache.length) {
+        busSelect.innerHTML = '<option value="">No in-service buses</option>';
+      }
+      fleetCache.forEach(b => {
+        const o = document.createElement('option');
+        o.value = b.id;
+        o.textContent = b.fleet_number + ' | ' + b.reg;
+        busSelect.appendChild(o);
+      });
+      routeSelect.innerHTML = '<option value="">No service (dead run)</option>';
+      routesCache.forEach(rr => {
+        const o = document.createElement('option');
+        o.value = rr.id;
+        o.textContent = rr.route_num + ' — ' + (rr.inbound_destination || '');
+        routeSelect.appendChild(o);
+      });
+    } catch (e) {
+      setupErr.textContent = 'Could not load fleet: ' + e.message;
+    }
+  }
+
+  async function onRouteChange() {
+    const id = parseInt(routeSelect.value);
+    routeGeo = [];
+    const r = routesCache.find(x => x.id === id);
+    if (!r) return;
+    try {
+      const res = await apiReq('/routes/' + id + '/stops/', null, 'stops');
+      const stops = res.stops || [];
+      const coords = [];
+      stops.forEach(s => {
+        const cords = s.cords || s.coords;
+        if (cords && typeof cords === 'string') {
+          const [a, b] = cords.split(',');
+          const lat = parseFloat(a), lng = parseFloat(b);
+          if (!isNaN(lat) && !isNaN(lng)) coords.push([lat, lng]);
+        } else if (s.lat != null && s.lng != null) {
+          const lat = parseFloat(s.lat), lng = parseFloat(s.lng);
+          if (!isNaN(lat) && !isNaN(lng)) coords.push([lat, lng]);
+        }
+      });
+      routeGeo = coords;
+    } catch (e) {
+      routeGeo = [];
+    }
+  }
+
+  function snapPoint(lat, lng) {
+    if (!routeGeo || routeGeo.length < 2) return [lat, lng];
+    let best = null;
+    let bestD = Infinity;
+    for (let i = 0; i < routeGeo.length - 1; i++) {
+      const a = routeGeo[i], b = routeGeo[i + 1];
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const len2 = dx * dx + dy * dy;
+      let t = len2 ? ((lat - a[0]) * dx + (lng - a[1]) * dy) / len2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const px = a[0] + t * dx, py = a[1] + t * dy;
+      const d = (lat - px) * (lat - px) + (lng - py) * (lng - py);
+      if (d < bestD) { bestD = d; best = [px, py]; }
+    }
+    return best || [lat, lng];
+  }
+
+  function applyBusSelection() {
+    const b = fleetCache.find(v => v.id === parseInt(busSelect.value));
+    if (!b) { setupErr.textContent = 'Pick a bus first.'; return; }
+    const rid = parseInt(routeSelect.value);
+    const r = rid && routesCache.find(x => x.id === rid) ? routesCache.find(x => x.id === rid) : null;
+    routeObj = r;
+    vehicle = b;
+    if (mbLive) stopTracking();
+    setupModal.classList.remove('show');
+    updateChip();
+    setStatus('Ready: ' + vehicle.fleet_number + (routeObj ? ' ' + routeObj.route_num : ' (dead)'), '');
+  }
+
+  function signOut() {
+    auth = null;
+    vehicle = null;
+    routeObj = null;
+    routeGeo = [];
+    saveAuth();
+    setupModal.classList.remove('show');
+    updateChip();
+    if (tracking) stopTracking();
+    setStatus('Idle');
+  }
+
+  // ---------------- MBT trip / position ----------------
+  async function beginLive() {
+    if (mbLive) return;
+    setStatus('Starting trip…');
+    let endIso = null;
+    const endRaw = document.getElementById('endTimeInput').value;
+    if (endRaw) {
+      const d = new Date(endRaw);
+      if (!isNaN(d.getTime())) endIso = d.toISOString();
+    }
+    if (!endIso) endIso = new Date(Date.now() + 3600000).toISOString();
+    try {
+      const res = await apiReq('/trips/create/', {
+        session_key: auth.session_key,
+        vehicle_id: vehicle.id,
+        route_id: routeObj ? routeObj.id : null,
+        route_number: routeObj ? routeObj.route_num : 'dead',
+        outbound_destination: routeObj ? (routeObj.outbound_destination || '') : '',
+        trip_date_time: new Date().toISOString(),
+        trip_end_date_time: endIso,
+        InBound: true,
+        current_stop: ''
+      }, 'trips/create');
+      tripId = res.trip_id;
+      mbLive = true;
+      lastFwd = 0;
+      lastTrail = null;
+      mbReadoutOn(true);
+      fwdTimer = setInterval(heartbeat, 8000);
+      setStatus('LIVE: ' + vehicle.fleet_number + (routeObj ? ' ' + routeObj.route_num : ' (dead)'), 'live');
+    } catch (e) {
+      setStatus('MBT error: ' + e.message, '');
+    }
+  }
+
+  function stopLive() {
+    mbLive = false;
+    mbReadoutOn(false);
+    if (fwdTimer) { clearInterval(fwdTimer); fwdTimer = null; }
+    tripId = null;
+  }
+
+  async function heartbeat() {
+    if (!mbLive || !tripId) return;
+    if (lastKnown) await forwardPos(lastKnown.lat, lastKnown.lng, lastKnown.heading);
+  }
+
+  async function forwardPos(lat, lng, heading) {
+    if (!mbLive || !tripId || !auth) return;
+    const now = Date.now();
+    if (now - lastFwd < 2500) return;
+    lastFwd = now;
+    let sendLat = lat, sendLon = lng;
+    if (snapCheck && snapCheck.checked && routeGeo.length >= 2) {
+      const p = snapPoint(lat, lng);
+      sendLat = p[0];
+      sendLon = p[1];
+    }
+    let sendTrail = false;
+    if (!lastTrail || L.latLng(lastTrail.lat, lastTrail.lng).distanceTo([sendLat, sendLon]) >= 5) {
+      lastTrail = { lat: sendLat, lng: sendLon };
+      sendTrail = true;
+    }
+    try {
+      const body = { session_key: auth.session_key, lat: sendLat, lon: sendLon, rotation: heading };
+      const p1 = apiReq('/trips/vehicle/' + vehicle.id + '/simulate/', body, 'sim veh ' + vehicle.id);
+      const p2 = sendTrail ? apiReq('/trips/' + tripId + '/tracking/', body, 'trail ' + tripId) : Promise.resolve();
+      await Promise.allSettled([p1, p2]);
+    } catch (e) {
+      /* keep going */
+    }
+  }
+
+  // ---------------- Tracking core ----------------
+  function fmtClock(seconds) {
+    const t = new Date(0);
+    t.setUTCSeconds(seconds);
+    return t.toISOString().substr(11, 8);
+  }
+
+  function updatePolyline() {
+    if (!path) path = L.polyline(points, { color: '#38bdf8', weight: 3 }).addTo(map);
+    else path.setLatLngs(points);
+  }
+
+  function createMarker(ll) {
+    marker = L.marker(ll, { icon, interactive: debugMode, draggable: debugMode, zIndexOffset: 1000 });
+    marker.addTo(map);
+    if (debugMode) {
+      marker.on('drag', onDebugDrag);
+      marker.on('dragend', onDebugDragEnd);
+    }
+  }
+
+  function refreshMarker() {
+    if (!marker) return;
+    const ll = marker.getLatLng();
+    map.removeLayer(marker);
+    createMarker(ll);
+    rotateIcon(smoothDir || 0);
+  }
+
+  function recordPoint(latLngArr, dir, seconds) {
+    if (!marker) createMarker(latLngArr);
+    else marker.setLatLng(latLngArr);
+    rotateIcon(dir);
+    points.push(latLngArr);
+    updatePolyline();
+    addMinuteLabel(latLngArr, seconds);
+  }
+
+  function addMinuteLabel(latLngArr, seconds) {
+    const minIdx = Math.floor(seconds / 60);
+    if (minIdx < 1 || minIdx <= lastLabelMin) return;
+    lastLabelMin = minIdx;
+    const tag = L.marker(latLngArr, {
+      icon: L.divIcon({ className: '', html: '<div class="time-tag">' + fmtClock(seconds) + '</div>', iconSize: null }),
+      interactive: false
+    });
+    timeTags.addLayer(tag);
+  }
+
+  function onDebugDrag(e) {
+    const ll = e.target.getLatLng();
+    if (!points.length) return;
+    const last = L.latLng(points[points.length - 1]);
+    const dist = last.distanceTo(ll);
+    if (dist < MIN_STEP) return;
+    const dir = bearing(points[points.length - 1], [ll.lat, ll.lng]);
+    simTime += dist / SIM_SPEED;
+    recordPoint([ll.lat, ll.lng], dir, simTime);
+    updateReadoutSim([ll.lat, ll.lng], dir, dist);
+    lastKnown = { lat: ll.lat, lng: ll.lng, heading: dir };
+    forwardPos(ll.lat, ll.lng, dir);
+  }
+
+  function onDebugDragEnd(e) {
+    onDebugDrag(e);
+  }
+
+  function updateReadoutSim(latLngArr, dir, dist) {
+    document.getElementById('rLat').textContent = latLngArr[0].toFixed(6);
+    document.getElementById('rLon').textContent = latLngArr[1].toFixed(6);
+    document.getElementById('rAcc').textContent = 'sim';
+    document.getElementById('rSpd').textContent = (dist / SIM_SPEED).toFixed(1) + ' m/s (sim)';
+    document.getElementById('rHead').textContent = dir.toFixed(0) + '°';
+    document.getElementById('rPts').textContent = points.length;
+    document.getElementById('rTime').textContent = fmtClock(simTime) + ' sim';
+  }
+
+  function setDebugMode(on) {
+    debugMode = on;
+    smoothDir = null;
+    simTime = 0;
+    lastLabelMin = -1;
+    timeTags.clearLayers();
+    if (on) {
+      if (!marker) {
+        const c = map.getCenter();
+        if (Math.abs(c.lat) < 1 && Math.abs(c.lng) < 1) map.setView(c, 4);
+        createMarker(c);
+        points.push([c.lat, c.lng]);
+      } else {
+        refreshMarker();
+        if (!points.length) points.push([marker.getLatLng().lat, marker.getLatLng().lng]);
+      }
+      readout.classList.add('show');
+      if (mbLive) setStatus('LIVE: ' + vehicle.fleet_number + ' (drag to move)', 'live');
+      else setStatus('Simulating – drag the icon', '');
+    } else {
+      if (marker) refreshMarker();
+      if (!tracking) {
+        readout.classList.remove('show');
+        setStatus('Idle', '');
+      }
+    }
+  }
+
+  function startTracking() {
+    if (!navigator.geolocation) { alert('Geolocation is not supported by this browser.'); return; }
+    if (debugMode) setDebugMode(false);
+    tracking = true;
+    follow = true;
+    points = [];
+    smoothDir = null;
+    simTime = 0;
+    lastLabelMin = -1;
+    sessionStartTs = 0;
+    timeTags.clearLayers();
+    if (path) { map.removeLayer(path); path = null; }
+    if (accCircle) { map.removeLayer(accCircle); accCircle = null; }
+    readout.classList.add('show');
+    dot.classList.add('on');
+
+    if (auth && vehicle) {
+      beginLive();
+    } else {
+      setStatus('Tracking (local)');
+    }
+
+    watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 10000
+    });
+    btn.textContent = 'Stop';
+    btn.classList.add('live');
+  }
+
+  function stopTracking() {
+    tracking = false;
+    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    if (mbLive) stopLive();
+    btn.classList.remove('live');
+    btn.textContent = 'Start Tracking';
+    dot.classList.remove('on');
+    setStatus('Stopped');
+    readout.classList.remove('show');
+  }
+
+  function onError(err) {
+    setStatus(err.code === 1 ? (mbLive ? 'Live (no GPS – use Drag)' : 'Permission denied') : 'No fix', mbLive ? 'live' : '');
+  }
+
+  function onPosition(pos) {
+    const { latitude, longitude, accuracy, speed, heading } = pos.coords;
+    const ll = [latitude, longitude];
+    const isFirst = points.length === 0;
+    if (isFirst) sessionStartTs = pos.timestamp;
+    const seconds = (pos.timestamp - sessionStartTs) / 1000;
+
+    let dir = heading;
+    if (dir === null || Number.isNaN(dir)) {
+      dir = points.length ? bearing(points[points.length - 1], ll) : 0;
+    }
+
+    recordPoint(ll, dir, seconds);
+
+    if (isFirst) map.setView(ll, 16);
+
+    if (!accCircle) {
+      accCircle = L.circle(ll, { radius: accuracy, color: '#38bdf8', weight: 1, opacity: .6, fillColor: '#38bdf8', fillOpacity: .12 }).addTo(map);
+    } else {
+      accCircle.setLatLng(ll).setRadius(accuracy);
+    }
+
+    if (tracking && follow) map.panTo(ll, { animate: true, duration: 0.5 });
+
+    document.getElementById('rLat').textContent = latitude.toFixed(6);
+    document.getElementById('rLon').textContent = longitude.toFixed(6);
+    document.getElementById('rAcc').textContent = accuracy.toFixed(0) + ' m';
+    document.getElementById('rSpd').textContent = speed !== null && !Number.isNaN(speed) ? (speed * 3.6).toFixed(1) + ' km/h' : '–';
+    document.getElementById('rHead').textContent = dir.toFixed(0) + '°';
+    document.getElementById('rPts').textContent = points.length;
+    document.getElementById('rTime').textContent = pos.timestamp ? new Date(pos.timestamp).toLocaleTimeString() : '–';
+
+    lastKnown = { lat: latitude, lng: longitude, heading: dir };
+    forwardPos(latitude, longitude, dir);
+  }
+
+  function bearing(a, b) {
+    const rad = d => d * Math.PI / 180;
+    const deg = d => d * 180 / Math.PI;
+    const la1 = rad(a[0]), la2 = rad(b[0]);
+    const dLon = rad(b[1] - a[1]);
+    const y = Math.sin(dLon) * Math.cos(la2);
+    const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dLon);
+    return (deg(Math.atan2(y, x)) + 360) % 360;
+  }
+
+  function rotateIcon(deg) {
+    if (!marker) return;
+    let d = deg;
+    if (smoothDir !== null) {
+      d = smoothDir + ((deg - smoothDir + 540) % 360) - 180;
+    }
+    smoothDir = d;
+    const el = marker.getElement().querySelector('.direction-icon');
+    if (el) el.style.transform = 'rotate(' + d + 'deg)';
+  }
+
+  // ---------------- Event wiring ----------------
+  btn.addEventListener('click', () => (tracking ? stopTracking() : startTracking()));
+  debugCheck.addEventListener('change', e => setDebugMode(e.target.checked));
+  document.getElementById('centerBtn').addEventListener('click', () => {
+    follow = true;
+    if (marker) map.panTo(marker.getLatLng());
+  });
+  map.on('dragstart', () => { follow = false; });
+  map.on('zoomstart', () => { follow = false; });
+
+  document.getElementById('accountBtn').addEventListener('click', () => {
+    if (auth) openSetup(); else loginModal.classList.add('show');
+  });
+  loginBtn.addEventListener('click', doLogin);
+  loginCode.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  document.getElementById('loginCancel').addEventListener('click', () => loginModal.classList.remove('show'));
+  companyNext.addEventListener('click', onCompanyNext);
+  backCompany.addEventListener('click', () => showStep('company'));
+  routeSelect.addEventListener('change', onRouteChange);
+  opSelect.addEventListener('change', () => { setupErr.textContent = ''; });
+  document.getElementById('endReset').addEventListener('click', resetEndTime);
+  document.getElementById('setupSave').addEventListener('click', applyBusSelection);
+  document.getElementById('setupSignout').addEventListener('click', signOut);
+  document.getElementById('setupCancel').addEventListener('click', () => setupModal.classList.remove('show'));
+  busChip.addEventListener('click', e => {
+    if (e.target.classList.contains('x')) { if (auth) openSetup(); }
+  });
+
+  // Restore session on load
+  if (auth && vehicle) updateChip();
+</script>
+</body>
+</html>
