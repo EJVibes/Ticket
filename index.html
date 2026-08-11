@@ -7,160 +7,239 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
-  #map { position: absolute; inset: 0; background: #0b1220; }
+  html, body { margin: 0; height: 100%; font-family: Avenir, Helvetica, Arial, sans-serif; overflow: hidden; background: #fff; color: #000; }
+  #map { position: absolute; top: 7.5vh; left: 0; right: 0; bottom: 20vh; background: #dbe5ee; }
   .leaflet-container { font: inherit; }
 
-  .panel {
-    position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000;
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center;
-    background: rgba(15,23,42,.94); color: #e2e8f0;
-    padding: 10px 14px; border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.4); backdrop-filter: blur(6px);
-    white-space: nowrap; max-width: calc(100vw - 24px);
+  /* T200 top header */
+  .top {
+    position: fixed; top: 0; left: 0; right: 0; height: 7.5vh; z-index: 1000;
+    background: #282828; color: #fff; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 8px; box-sizing: border-box;
   }
+  .brand { font-size: 14px; letter-spacing: 1px; font-weight: 600; line-height: 1.15; text-align: left; }
+  .brand .sub { display: block; font-size: 9px; font-weight: 400; color: #9aa0aa; letter-spacing: 2px; }
+  .topright { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+  /* T200 blue buttons */
   button {
-    border: 0; border-radius: 8px; padding: 9px 18px; font-size: 14px;
-    font-weight: 600; cursor: pointer; transition: background .15s, transform .05s;
-    color: #0f172a;
+    border: 0; border-radius: 4px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+    background: #00009C; color: #fff; font-family: inherit; touch-action: manipulation; white-space: nowrap;
   }
-  button:active { transform: scale(.97); }
-  button.ghost { background:#1e293b; color:#cbd5e1; }
-  #startBtn { background: #22c55e; color: #052e16; }
-  #startBtn.live { background: #ef4444; color: #fff; }
-  .status { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: #64748b; }
+  button:hover { background: #000082; }
+  button.ghost { background: #3a3f4b; color: #e6e8ee; }
+  button.issue {
+    position: fixed; left: 0; bottom: 10vh; z-index: 1000;
+    background: #383838; color: #fff; border-radius: 0; width: 100%; height: 10vh;
+    font-size: 16px; margin: 0; letter-spacing: 1px;
+  }
+  button.issue.live { background: #00009C; }
+  button.issue.live:hover { background: #000082; }
+
+  .status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #fff; white-space: nowrap; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; }
   .dot.on { background: #22c55e; animation: pulse 1.2s infinite; }
   .dot.live { background: #ef4444; animation: pulse 1.2s infinite; }
   @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
-  #busChip {
-    font-size: 12px; background:#1e293b; color:#e2e8f0; border-radius: 999px;
-    padding: 5px 11px; display:none; align-items:center; gap:6px;
-  }
-  #busChip.show { display: inline-flex; }
-  #busChip .x { cursor:pointer; color:#94a3b8; font-weight:700; }
 
-  .debug-toggle { display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; user-select:none; color:#94a3b8; }
-  .debug-toggle input { display:none; }
-  .debug-toggle .sw { width:34px; height:18px; border-radius:9px; background:#334155; position:relative; transition:background .15s; }
-  .debug-toggle .sw::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:#fff; transition:left .15s; }
+  .debug-toggle { display: flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer; color: #fff; user-select: none; }
+  .debug-toggle input { display: none; }
+  .debug-toggle .sw { width: 30px; height: 16px; border-radius: 8px; background: #555; position: relative; transition: background .15s; }
+  .debug-toggle .sw::after { content:''; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:#fff; transition:left .15s; }
   .debug-toggle input:checked + .sw { background:#f59e0b; }
-  .debug-toggle input:checked + .sw::after { left:18px; }
+  .debug-toggle input:checked + .sw::after { left:16px; }
 
+  #busChip { font-size: 11px; background: #00009C; color: #fff; border-radius: 4px; padding: 5px 9px; display: none; align-items: center; gap: 6px; }
+  #busChip.show { display: inline-flex; }
+  #busChip .x { cursor: pointer; color: #fff; font-weight: 700; }
+
+  /* T200 black footer status bar */
+  .footer {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 10vh; z-index: 1000; background: #000; color: #fff;
+    display: flex; align-items: center; justify-content: space-between; padding: 0 12px; box-sizing: border-box;
+  }
+  .status-row { display: flex; gap: 16px; align-items: center; }
+  .status-item { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 9px; letter-spacing: 1px; min-width: 44px; color: #fff; }
+  .bars { display: flex; align-items: flex-end; gap: 2px; height: 14px; }
+  .bars i { width: 4px; background: #4ade80; border-radius: 1px; }
+  .bars i:nth-child(1) { height: 4px; }
+  .bars i:nth-child(2) { height: 9px; }
+  .bars i:nth-child(3) { height: 14px; }
+  .bars i.off { background: #555; }
+  .footerTime { text-align: right; font-size: 1.6rem; line-height: 1.05; }
+  .footerTime #ftDate { font-size: .75rem; color: #9aa0aa; letter-spacing: 1px; }
+
+  /* T200 amber popup readout */
   .readout {
-    position: fixed; left: 12px; bottom: 12px; z-index: 1000;
-    background: rgba(15,23,42,.94); color: #e2e8f0; border-radius: 12px;
-    padding: 13px 15px; font-size: 12px; line-height: 1.7;
-    box-shadow: 0 8px 24px rgba(0,0,0,.4); min-width: 220px; display: none;
+    position: fixed; left: 12px; bottom: 21vh; z-index: 1100; display: none;
+    background: #FFB210; color: #000; padding: 12px 16px; font-size: 12px; line-height: 1.7; border-radius: 4px;
+    border-top: 26px solid #505050; border-bottom: 20px solid #505050; min-width: 240px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.45);
   }
   .readout.show { display: block; }
-  .readout b { color: #94a3b8; font-weight: 600; }
-  #rMbt.on { color:#ef4444; font-weight:700; }
+  .readout b { font-weight: 700; }
+  #rMbt.on { color: #00552a; font-weight: 800; }
 
   .center-btn {
-    position: fixed; right: 12px; bottom: 12px; z-index: 1000;
-    width: 46px; height: 46px; border-radius: 50%;
-    background: rgba(15,23,42,.94); color: #e2e8f0; border: 1px solid #334155;
-    box-shadow: 0 6px 18px rgba(0,0,0,.4); cursor: pointer; font-size: 20px;
-    display: flex; align-items: center; justify-content: center; padding: 0;
+    position: fixed; right: 12px; bottom: 21vh; z-index: 1000; width: 46px; height: 46px; border-radius: 50%;
+    background: #00009C; color: #fff; border: 2px solid #fff; box-shadow: 0 4px 14px rgba(0,0,0,.4);
+    cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; padding: 0;
   }
-  .center-btn:hover { background: #1e293b; }
+  .center-btn:hover { background: #000082; }
 
   .direction-icon { transition: transform .25s ease; }
   .time-tag {
     white-space: nowrap; display: inline-block;
     font-size: 10px; font-weight: 700; color: #0f172a;
-    background: #fbbf24; border: 1px solid #b45309; border-radius: 8px;
+    background: #fbbf24; border: 1px solid #b45309; border-radius: 4px;
     padding: 1px 5px; box-shadow: 0 2px 6px rgba(0,0,0,.35);
   }
 
-  /* Modals */
-  .overlay {
-    position: fixed; inset: 0; z-index: 2000; display: none;
-    align-items: center; justify-content: center;
-    background: rgba(2,6,23,.72); backdrop-filter: blur(3px);
-  }
+  /* T200 screen overlay / card */
+  .overlay { position: fixed; inset: 0; z-index: 2000; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
   .overlay.show { display: flex; }
-  .card {
-    background:#0f172a; color:#e2e8f0; border:1px solid #1e293b; border-radius:14px;
-    padding: 24px; width: min(90vw, 380px); box-shadow: 0 20px 60px rgba(0,0,0,.55);
-    max-height: 88vh; overflow: auto;
-  }
-  .card h2 { margin: 0 0 6px; font-size: 18px; }
-  .card p.hint { margin: 0 0 16px; font-size: 12px; color:#94a3b8; }
-  .card .field { margin-bottom: 12px; }
-  .card label { display:block; font-size: 12px; color:#94a3b8; margin-bottom:4px; }
+  .card { background: #fff; color: #000; border-radius: 8px; padding: 0; width: min(92vw, 420px); box-shadow: 0 20px 60px rgba(0,0,0,.55); max-height: 88vh; overflow: auto; box-sizing: border-box; }
+  .cardTitle { background: #282828; color: #fff; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; border-radius: 8px 8px 0 0; }
+  .cardTitle h2 { margin: 0; font-size: 15px; letter-spacing: 1px; }
+  .cardTitle span { font-size: 11px; color: #9aa0aa; }
+  .card p.hint { margin: 10px 16px 0; font-size: 12px; color: #555; }
+  .card .field { margin: 10px 16px; }
+  .card label { display: block; font-size: 11px; color: #555; margin-bottom: 4px; letter-spacing: .5px; }
   .card input, .card select {
-    width:100%; box-sizing:border-box; padding:9px 10px; border-radius:8px;
-    border:1px solid #334155; background:#0b1220; color:#e2e8f0; font-size:14px; outline:none;
+    width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #999; border-radius: 4px;
+    font-size: 14px; outline: none; font-family: inherit; background: #fff; color: #000;
   }
-  .card input:focus, .card select:focus { border-color:#3b82f6; }
-  .card .row { display:flex; gap:8px; align-items:center; margin-top:16px; }
-  .card .row button { flex:1; }
-  #loginErr, #setupErr { color:#f87171; font-size:12px; min-height:16px; margin:10px 0 0; }
-  .lnk { color:#60a5fa; font-size:12px; text-decoration:none; }
+  .card input:focus, .card select:focus { border-color: #00009C; }
+  .card .row { display: flex; gap: 8px; align-items: center; margin: 14px 16px; }
+  .card .row button { flex: 1; padding: 10px; }
+  #loginErr, #setupErr { color: #c00; font-size: 12px; min-height: 16px; margin: 4px 16px; }
+  .lnk { color: #00009C; font-size: 12px; text-decoration: underline; display: inline-block; margin: 0 16px 12px; }
 
-  .spinner { display:none; width:16px; height:16px; border:2px solid #334155; border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; }
-  .spinner.show { display:inline-block; }
+  /* T200 numpad login */
+  #loginDisplay { font-size: 20px; letter-spacing: 2px; text-align: center; }
+  .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 16px 6px; }
+  .numpad button { height: 50px; font-size: 20px; }
+  .numpad .keyC { background: #383838; }
+  .numpad .keyC:hover { background: #2c2c2c; }
+  .numpad .keyOk { background: #009b15; }
+  .numpad .keyOk:hover { background: #007f12; }
+
+  /* T200 option list */
+  .stepBody { padding: 12px 16px; }
+  .options { max-height: 46vh; overflow-y: auto; }
+  .option button { width: 100%; font-size: 15px; height: 48px; border-radius: 4px; margin-bottom: 8px; text-align: left; padding: 0 14px; line-height: 1.15; }
+  .option button small { display: block; font-weight: 400; font-size: 11px; opacity: .8; }
+
+  .spinner { display: none; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
+  .spinner.show { display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg) } }
 </style>
 </head>
 <body>
   <div id="map"></div>
 
-  <div class="panel">
-    <div class="status">
-      <span class="dot" id="dot"></span>
-      <span id="statusLabel">Idle</span>
+  <div class="top">
+    <div class="brand">GPS&nbsp;SIM<span class="sub">MyBusTimes</span></div>
+    <div class="topright">
+      <div class="status">
+        <span class="dot" id="dot"></span>
+        <span id="statusLabel">Idle</span>
+      </div>
+      <span id="busChip"></span>
+      <label class="debug-toggle" id="debugToggle" title="Drag the icon to simulate movement">
+        <input type="checkbox" id="debugCheck" />
+        <span class="sw"></span>
+        <span>Drag</span>
+      </label>
+      <button class="ghost" id="accountBtn">Account</button>
     </div>
-    <button id="startBtn">Start Tracking</button>
-    <label class="debug-toggle" id="debugToggle" title="Drag the icon to simulate movement">
-      <input type="checkbox" id="debugCheck" />
-      <span class="sw"></span>
-      <span>Drag</span>
-    </label>
-    <span id="busChip"></span>
-    <button class="ghost" id="accountBtn">Account</button>
   </div>
 
   <div class="readout" id="readout">
+    <div><b id="rMbt">MBT &nbsp;off</b></div>
     <div>Lat &nbsp;<b id="rLat">–</b></div>
     <div>Lon &nbsp;<b id="rLon">–</b></div>
-    <div>Accuracy &nbsp;<b id="rAcc">–</b></div>
+    <div>Acc &nbsp;<b id="rAcc">–</b></div>
     <div>Speed &nbsp;<b id="rSpd">–</b></div>
     <div>Heading &nbsp;<b id="rHead">–</b></div>
     <div>Points &nbsp;<b id="rPts">0</b></div>
     <div>Updated &nbsp;<b id="rTime">–</b></div>
-    <div>MBT &nbsp;<b id="rMbt">off</b></div>
     <div>API &nbsp;<b id="rApi" style="color:#94a3b8">–</b></div>
   </div>
 
   <button class="center-btn" id="centerBtn" title="Center on you">◎</button>
 
-  <!-- Login modal -->
-  <div class="overlay" id="loginModal">
-    <div class="card">
-      <h2>MyBusTimes account</h2>
-      <p class="hint">Sign in to choose one of your buses to broadcast on MBT.</p>
-      <div class="field"><label>User ID</label><input id="loginId" autocomplete="off" /></div>
-      <div class="field"><label>Login Code</label><input id="loginCode" type="password" autocomplete="off" /></div>
-      <div class="row">
-        <button id="loginBtn">Sign in<span class="spinner" id="loginSpin"></span></button>
-        <button class="ghost" id="loginCancel">Cancel</button>
+  <button class="issue" id="startBtn">Start Tracking</button>
+
+  <div class="footer">
+    <div class="status-row">
+      <div class="status-item">
+        <div class="bars"><i></i><i></i><i></i></div>
+        <span>GPS</span>
       </div>
-      <p id="loginErr"></p>
-      <div style="margin-top:10px"><a class="lnk" href="https://www.mybustimes.cc/u/TicketerCode" target="_blank" rel="noopener">Get your login code</a></div>
+      <div class="status-item">
+        <div class="bars"><i></i><i></i><i class="off"></i></div>
+        <span>NET</span>
+      </div>
+      <div class="status-item">
+        <div class="bars"><i></i><i class="off"></i><i class="off"></i></div>
+        <span>PRT</span>
+      </div>
+      <div class="status-item">
+        <span class="dot" id="mbtDot"></span>
+        <span>MBT</span>
+      </div>
+    </div>
+    <div class="footerTime">
+      <span id="ftTime">--:--</span>
+      <div id="ftDate">–</div>
     </div>
   </div>
 
-  <!-- Bus setup modal (step 1: company, step 2: vehicle + route) -->
+  <!-- Login modal (T200 numpad) -->
+  <div class="overlay" id="loginModal">
+    <div class="card">
+      <div class="cardTitle">
+        <h2 id="loginStep">LOG ON</h2>
+        <span>Driver ID</span>
+      </div>
+      <p class="hint">Enter your User ID then your login code.</p>
+      <div id="loginWrap" class="field">
+        <input id="loginDisplay" readonly placeholder="User ID / Code" />
+      </div>
+      <div class="numpad" id="numpad">
+        <button data-k="1">1</button>
+        <button data-k="2">2</button>
+        <button data-k="3">3</button>
+        <button data-k="4">4</button>
+        <button data-k="5">5</button>
+        <button data-k="6">6</button>
+        <button data-k="7">7</button>
+        <button data-k="8">8</button>
+        <button data-k="9">9</button>
+        <button class="keyC" data-k="C">C</button>
+        <button data-k="0">0</button>
+        <button class="keyOk" data-k="OK">OK</button>
+      </div>
+      <p id="loginErr"></p>
+      <div class="row">
+        <button class="ghost" id="loginCancel">Close</button>
+        <a class="lnk" style="margin:0;" href="https://www.mybustimes.cc/u/TicketerCode" target="_blank" rel="noopener">Get your login code</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bus setup modal (T200 option steps) -->
   <div class="overlay" id="setupModal">
     <div class="card">
-      <h2 id="setupTitle">Select company</h2>
-      <p class="hint">Signed in as <b id="setupUser">–</b></p>
+      <div class="cardTitle">
+        <h2 id="setupTitle">Select company</h2>
+        <span id="setupUser">–</span>
+      </div>
+      <p class="hint">Signed-in user id shown above.</p>
 
-      <div id="stepCompany">
-        <div class="field"><label>Company</label><select id="opSelect"></select></div>
+      <div class="stepBody" id="stepCompany">
+        <div class="options" id="opList"></div>
         <div class="row">
           <button id="companyNext">Next<span class="spinner" id="setupSpin"></span></button>
           <button class="ghost" id="setupSignout">Sign out</button>
@@ -168,18 +247,20 @@
         </div>
       </div>
 
-      <div id="stepBus" style="display:none">
-        <div class="field"><label>Bus</label><select id="busSelect"></select></div>
-        <div class="field"><label>Route (shown on MBT map)</label><select id="routeSelect"></select></div>
-        <label class="debug-toggle">
-          <input type="checkbox" id="snapCheck" checked />
-          <span class="sw"></span>
-          <span>Snap position to route</span>
-        </label>
-        <div class="field"><label>Trip ends</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="datetime-local" id="endTimeInput" />
-            <button class="ghost" id="endReset" type="button" style="padding:7px 10px;font-size:12px;white-space:nowrap;flex-shrink:0">+1h</button>
+      <div class="stepBody" id="stepBus" style="display:none">
+        <div class="options">
+          <div class="field"><label>Bus</label><select id="busSelect"></select></div>
+          <div class="field"><label>Route (shown on MBT map)</label><select id="routeSelect"></select></div>
+          <label class="debug-toggle" style="margin:4px 0">
+            <input type="checkbox" id="snapCheck" checked />
+            <span class="sw"></span>
+            <span>Snap position to route</span>
+          </label>
+          <div class="field"><label>Trip ends</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="datetime-local" id="endTimeInput" />
+              <button class="ghost" id="endReset" type="button" style="padding:7px 10px;font-size:12px;white-space:nowrap;flex-shrink:0">+1h</button>
+            </div>
           </div>
         </div>
         <div class="row">
@@ -230,6 +311,7 @@
   const timeTags = L.layerGroup().addTo(map);
   const MIN_STEP = 12;
   const SIM_SPEED = 2;
+  let wakeLock = null;
 
   // ---------------- MBT state ----------------
   let auth = loadAuth();
@@ -256,14 +338,12 @@
   const readout = document.getElementById('readout');
   const statusLabel = document.getElementById('statusLabel');
   const dot = document.getElementById('dot');
+  const mbtDot = document.getElementById('mbtDot');
   const debugCheck = document.getElementById('debugCheck');
   const busChip = document.getElementById('busChip');
   const loginModal = document.getElementById('loginModal');
   const setupModal = document.getElementById('setupModal');
-  const loginId = document.getElementById('loginId');
-  const loginCode = document.getElementById('loginCode');
-  const loginBtn = document.getElementById('loginBtn');
-  const loginSpin = document.getElementById('loginSpin');
+  const loginDisplay = document.getElementById('loginDisplay');
   const loginErr = document.getElementById('loginErr');
   const setupErr = document.getElementById('setupErr');
   const setupSpin = document.getElementById('setupSpin');
@@ -271,7 +351,6 @@
   const setupTitle = document.getElementById('setupTitle');
   const stepCompany = document.getElementById('stepCompany');
   const stepBus = document.getElementById('stepBus');
-  const opSelect = document.getElementById('opSelect');
   const busSelect = document.getElementById('busSelect');
   const routeSelect = document.getElementById('routeSelect');
   const snapCheck = document.getElementById('snapCheck');
@@ -281,6 +360,10 @@
   let opsCache = [];
   let fleetCache = [];
   let routesCache = [];
+  let selectedOpId = null;
+
+  let loginStep = 1;      // 1 = User ID, 2 = Login Code
+  let loginBuf = '';
 
   function setStatus(t, cls) {
     statusLabel.textContent = t;
@@ -297,8 +380,9 @@
   }
   function mbReadoutOn(on) {
     const el = document.getElementById('rMbt');
-    el.textContent = on ? ('LIVE · ' + (vehicle ? vehicle.fleet_number : '') + ' · trip ' + tripId) : 'off';
+    el.textContent = on ? ('MBT LIVE · ' + (vehicle ? vehicle.fleet_number : '') + ' · trip ' + tripId) : 'MBT off';
     el.classList.toggle('on', !!on);
+    if (mbtDot) mbtDot.classList.toggle('live', !!on);
   }
 
   // ---------------- MBT API ----------------
@@ -331,48 +415,96 @@
     return json;
   }
 
-  async function doLogin() {
-    const uid = loginId.value.trim();
-    const code = loginCode.value.trim();
+  function nudgeNumpad() {
+    const title = document.getElementById('loginStep');
+    if (title) title.textContent = loginStep === 1 ? 'USER ID' : 'PASS CODE';
+    const show = loginStep === 2 ? '•'.repeat(loginBuf.length) : loginBuf;
+    loginDisplay.value = show || (loginStep === 1 ? 'Enter User ID' : 'Enter Login Code');
+    loginDisplay.placeholder = loginStep === 1 ? 'Enter User ID' : 'Enter Login Code';
+    loginDisplay.title = loginBuf;
+  }
+
+  const loginRemember = { id: '' };
+
+  document.getElementById('numpad').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const k = b.dataset.k;
+    if (k === 'C') { loginBuf = ''; nudgeNumpad(); return; }
+    if (k === 'OK') {
+      if (loginStep === 1) {
+        if (!loginBuf.trim()) { loginErr.textContent = 'Enter your User ID.'; return; }
+        loginRemember.id = loginBuf.trim();
+        loginStep = 2; loginBuf = ''; loginErr.textContent = '';
+        nudgeNumpad();
+        return;
+      }
+      if (!loginBuf.trim()) { loginErr.textContent = 'Enter your Login Code.'; return; }
+      doLogin(loginRemember.id);
+      return;
+    }
+    loginBuf += k;
     loginErr.textContent = '';
-    if (!uid || !code) { loginErr.textContent = 'Enter your User ID and Login Code.'; return; }
-    loginSpin.classList.add('show');
+    nudgeNumpad();
+  });
+
+  async function doLogin(uid) {
+    const code = loginBuf.trim();
+    const lerr = loginErr;
+    if (!uid || !code) { lerr.textContent = 'Enter your User ID and Login Code.'; return; }
+    lerr.textContent = '';
+    document.getElementById('loginStep').textContent = 'CHECKING';
     try {
       const res = await apiReq('/user/', { user_id: uid, code: code }, 'login');
       auth = { username: res.username || 'user', user_id: res.id, session_key: res.session_key };
       saveAuth();
+      loginStep = 1; loginBuf = ''; loginRemember.id = '';
       await openSetup();
       loginModal.classList.remove('show');
     } catch (e) {
-      loginErr.textContent = 'Sign-in failed: ' + e.message;
-    } finally {
-      loginSpin.classList.remove('show');
+      lerr.textContent = 'Sign-in failed: ' + e.message;
+      loginStep = 2; loginBuf = ''; nudgeNumpad();
     }
   }
 
   async function openSetup() {
     setupErr.textContent = '';
-    if (!auth) { loginModal.classList.add('show'); return; }
+    if (!auth) { openLogin(); return; }
     setupModal.classList.add('show');
     showStep('company');
+    selectedOpId = null;
     setupUser.textContent = auth.username;
     setupSpin.classList.add('show');
+    const opList = document.getElementById('opList');
+    opList.innerHTML = '<div class="option"><button disabled>Loading…</button></div>';
     try {
       const res = await apiReq('/user/operators/', { session_key: auth.session_key }, 'operators');
       opsCache = res.operators || [];
-      opSelect.innerHTML = '';
+      opList.innerHTML = '';
       if (!opsCache.length) { setupErr.textContent = 'No companies found on this account.'; setupSpin.classList.remove('show'); return; }
       opsCache.forEach(op => {
-        const o = document.createElement('option');
-        o.value = op.id;
-        o.textContent = op.operator_slug + (op.operator_code ? ' (' + op.operator_code + ')' : '');
-        opSelect.appendChild(o);
+        const div = document.createElement('div');
+        div.className = 'option';
+        const b = document.createElement('button');
+        b.textContent = (op.operator_name || op.operator_slug) + (op.operator_code ? ' | ' + op.operator_code : '');
+        b.addEventListener('click', () => selectOperator(op));
+        div.appendChild(b);
+        opList.appendChild(div);
       });
     } catch (e) {
       setupErr.textContent = 'Could not load account: ' + e.message;
     } finally {
       setupSpin.classList.remove('show');
     }
+  }
+
+  async function selectOperator(op) {
+    setupErr.textContent = '';
+    selectedOpId = op.id;
+    setupSpin.classList.add('show');
+    await onOperatorChange(op.id);
+    setupSpin.classList.remove('show');
+    if (!setupErr.textContent) showStep('bus');
   }
 
   function showStep(name) {
@@ -392,16 +524,14 @@
   }
 
   async function onCompanyNext() {
-    setupErr.textContent = '';
-    if (!opSelect.value) { setupErr.textContent = 'Pick a company.'; return; }
+    if (!selectedOpId) { setupErr.textContent = 'Pick a company.'; return; }
     setupSpin.classList.add('show');
-    await onOperatorChange();
+    await onOperatorChange(selectedOpId);
     setupSpin.classList.remove('show');
     if (!setupErr.textContent) showStep('bus');
   }
 
-  async function onOperatorChange() {
-    const opId = parseInt(opSelect.value);
+  async function onOperatorChange(opId) {
     fleetCache = [];
     routesCache = [];
     routeGeo = [];
@@ -704,6 +834,7 @@
       setStatus('Tracking (local)');
     }
 
+    acquireWakeLock();
     watchId = navigator.geolocation.watchPosition(onPosition, onError, {
       enableHighAccuracy: true,
       maximumAge: 0,
@@ -716,6 +847,7 @@
   function stopTracking() {
     tracking = false;
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    releaseWakeLock();
     if (mbLive) stopLive();
     btn.classList.remove('live');
     btn.textContent = 'Start Tracking';
@@ -785,6 +917,35 @@
     if (el) el.style.transform = 'rotate(' + d + 'deg)';
   }
 
+  // ---------------- Mobile: wake lock + best-effort background beacon ----------------
+  async function acquireWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { /* unsupported/denied */ }
+  }
+  function releaseWakeLock() {
+    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  }
+  function onVisibility() {
+    if (document.visibilityState === 'visible' && tracking) acquireWakeLock();
+  }
+  function beaconLastPosition() {
+    if (!mbLive || !tripId || !auth || !vehicle || !lastKnown || !navigator.sendBeacon) return;
+    const body = JSON.stringify({
+      session_key: auth.session_key,
+      lat: lastKnown.lat,
+      lon: lastKnown.lng,
+      rotation: lastKnown.heading || 0
+    });
+    let ok = false;
+    try {
+      ok = navigator.sendBeacon(API_BASE + '/trips/vehicle/' + vehicle.id + '/simulate/',
+        new Blob([body], { type: 'application/json' }));
+    } catch (e) { ok = false; }
+    if (ok) setApiLine('beacon → last fix sent', true);
+  }
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('pagehide', beaconLastPosition);
+
   // ---------------- Event wiring ----------------
   btn.addEventListener('click', () => (tracking ? stopTracking() : startTracking()));
   debugCheck.addEventListener('change', e => setDebugMode(e.target.checked));
@@ -795,16 +956,20 @@
   map.on('dragstart', () => { follow = false; });
   map.on('zoomstart', () => { follow = false; });
 
+  function openLogin() {
+    loginStep = 1; loginBuf = ''; loginRemember.id = '';
+    loginErr.textContent = '';
+    nudgeNumpad();
+    loginModal.classList.add('show');
+  }
+
   document.getElementById('accountBtn').addEventListener('click', () => {
-    if (auth) openSetup(); else loginModal.classList.add('show');
+    if (auth) openSetup(); else openLogin();
   });
-  loginBtn.addEventListener('click', doLogin);
-  loginCode.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
   document.getElementById('loginCancel').addEventListener('click', () => loginModal.classList.remove('show'));
   companyNext.addEventListener('click', onCompanyNext);
   backCompany.addEventListener('click', () => showStep('company'));
   routeSelect.addEventListener('change', onRouteChange);
-  opSelect.addEventListener('change', () => { setupErr.textContent = ''; });
   document.getElementById('endReset').addEventListener('click', resetEndTime);
   document.getElementById('setupSave').addEventListener('click', applyBusSelection);
   document.getElementById('setupSignout').addEventListener('click', signOut);
@@ -812,6 +977,22 @@
   busChip.addEventListener('click', e => {
     if (e.target.classList.contains('x')) { if (auth) openSetup(); }
   });
+
+  // ---------------- T200 footer clock ----------------
+  function tickClock() {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ft = document.getElementById('ftTime');
+    const fd = document.getElementById('ftDate');
+    if (ft) ft.textContent = hh + ':' + mm;
+    if (fd) {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      fd.textContent = months[now.getMonth()] + ' ' + String(now.getDate()).padStart(2, '0');
+    }
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
 
   // Restore session on load
   if (auth && vehicle) updateChip();
