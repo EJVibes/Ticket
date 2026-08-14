@@ -92,6 +92,23 @@
   }
   .center-btn:hover { background: #000082; }
 
+  /* Bus STOP bell (red, at top of map view) */
+  .bell {
+    position: fixed; top: 8.2vh; right: 12px; z-index: 1050;
+    width: 58px; height: 58px; border-radius: 50%;
+    background: #d00000; color: #fff; border: 3px solid #fff;
+    box-shadow: 0 4px 14px rgba(0,0,0,.45);
+    cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: 1px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0;
+  }
+  .bell:hover { background: #ff1a1a; }
+  .bell .bellLight {
+    width: 10px; height: 10px; border-radius: 50%; background: #7f1d1d;
+    transition: background .1s, box-shadow .1s;
+  }
+  .bell .bellLight.flash { background: #fff7ae; box-shadow: 0 0 12px #fff7ae; }
+  .bell .bellLight.steady { background: #fff7ae; box-shadow: 0 0 14px #fff7ae; animation: pulse 1s infinite; }
+
   .direction-icon { transition: transform .25s ease; }
   .time-tag {
     white-space: nowrap; display: inline-block;
@@ -266,6 +283,10 @@
   </div>
 
   <button class="center-btn" id="centerBtn" title="Center on you">◎</button>
+
+  <button class="bell" id="stopBell" title="Request stop at next bus stop">
+    <span class="bell-light" id="bellLight"></span>STOP
+  </button>
 
   <div class="actionbar">
     <button class="issue" id="startBtn">Start Tracking</button>
@@ -788,16 +809,35 @@
   // ---------------- Click-to-move (multi-waypoint missions) ----------------
   const OSRM_URL = 'https://router.project-osrm.org/route/v1/driving/';
   const FALLBACK_SPEED_MS = 13.4; // 30 mph, used only when no online road data
+  const ACCEL = 1.6;       // m/s^2 comfortable bus acceleration
+  const DECEL = 2.2;       // m/s^2 braking
+  const ROUND_SPEED_MS = 4.5;    // ~10 mph through roundabouts
+  const CORNER_SPEED_MS = 6.7;   // ~15 mph through turns
+  const CORNER_ANGLE = 28;       // degrees of bearing change = "corner"
   let waypoints = [];
   let wpPins = [];
   let wpPreview = null;
   let moveActive = false;
-  let moveDist = 0;
+  let moveDist = 0;     // metres into the current segment
+  let moveIdx = 0;      // current segment index
   let moveSegs = [];
-  let moveSpeeds = []; // per-segment road speeds (m/s) from OSRM
-  let moveIdx = 0;
+  let moveSpeeds = [];  // smoothed per-segment road speeds (m/s)
+  let moveTargets = []; // planned per-segment target speeds (m/s)
+  let segCum = [];      // cumulative distance at each vertex (m)
+  let routeEvents = []; // {idx,type,state,waitMs,done} — traffic lights
+  let moveEvents = [];  // per-segment events: {type,waitMs,done} for lights/bus stops
+  let roundSegs = new Set();
+  let busStopsOnRoute = []; // {idx,lat,lng,name}
+  let curSpeed = 0;     // current speed (m/s)
+  let waitUntil = 0;
+  let waitLabel = '';
+  let stopReq = null;      // {idx} bus stop requested via STOP bell
+  let stopReqName = '';
   let moveT0 = 0;
   let moveLast = null;
+  let audioCtx = null;
+  let bellTimer = null;
+  let bellSteady = false;
 
   function wpIconHTML(idx) {
     return '<div class="wp-pin">' +
@@ -901,10 +941,25 @@
     return null;
   }
 
-  // Look up the real speed limits along the route from OSM (Overpass).
-  // Overrides moveSpeeds with the actual posted limit of the road under each
-  // segment; segments without a tagged limit keep the OSRM step speed.
-  async function applyRealSpeedLimits() {
+  // Point-to-segment distance in metres (for projecting stops/lights onto the route)
+  function distToSeg(p, a, b) {
+    const d = L.latLng(a[0], a[1]).distanceTo([b[0], b[1]]);
+    if (d < 0.001) return L.latLng(a[0], a[1]).distanceTo(p);
+    const t = Math.max(0, Math.min(1, (
+      (p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / (
+      (b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])
+    )));
+    const proj = L.latLng(a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]));
+    return proj.distanceTo(p);
+  }
+
+  // Fetch route context from OSM (Overpass): speed limits, traffic lights,
+  // roundabouts and bus stops around the route, then build the speed profile.
+  async function fetchRouteContext() {
+    routeEvents = [];
+    moveEvents = [];
+    roundSegs = new Set();
+    busStopsOnRoute = [];
     if (moveSegs.length < 2) return;
     let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
     moveSegs.forEach(p => {
@@ -913,7 +968,13 @@
     });
     const pad = 0.004;
     const bbox = [minLat - pad, minLng - pad, maxLat + pad, maxLng + pad].join(',');
-    const q = '[out:json][timeout:25];way["highway"]["maxspeed"](' + bbox + ');out tags geom;';
+    const q = '[out:json][timeout:30];(' +
+      'way["highway"]["maxspeed"](' + bbox + ');' +
+      'node["highway"="traffic_signals"](' + bbox + ');' +
+      'way["junction"="roundabout"](' + bbox + ');' +
+      'node["highway"="bus_stop"](' + bbox + ');' +
+      'way["highway"="bus_stop"](' + bbox + ');' +
+      ');out tags geom;';
     const mirrors = [
       'https://overpass-api.de/api/interpreter?data=',
       'https://overpass.kumi.systems/api/interpreter?data=',
@@ -928,10 +989,12 @@
       } catch (e) { /* try next mirror */ }
     }
     if (!elements.length) return;
-    const ways = elements.filter(w => w.type === 'way' && w.geometry && w.geometry.length);
-    if (!ways.length) return;
+
+    // 1) speed limits per segment
+    const n = moveSegs.length - 1;
     const limits = [];
-    for (let i = 0; i < moveSegs.length - 1; i++) {
+    const ways = elements.filter(w => w.type === 'way' && w.geometry && w.geometry.length);
+    for (let i = 0; i < n; i++) {
       const mid = [(moveSegs[i][0] + moveSegs[i + 1][0]) / 2, (moveSegs[i][1] + moveSegs[i + 1][1]) / 2];
       let best = Infinity, mph = null;
       for (const w of ways) {
@@ -945,8 +1008,123 @@
       }
       limits.push((best < 25 && mph != null) ? mph * 0.44704 : null);
     }
-    for (let i = 0; i < limits.length; i++) {
+    for (let i = 0; i < n; i++) {
       if (limits[i] != null && moveSpeeds[i]) moveSpeeds[i] = limits[i];
+    }
+
+    // 2) roundabout segments
+    for (const w of elements) {
+      if (w.type !== 'way' || (w.tags || {}).junction !== 'roundabout' || !w.geometry) continue;
+      for (let i = 0; i < n; i++) {
+        const mid = [(moveSegs[i][0] + moveSegs[i + 1][0]) / 2, (moveSegs[i][1] + moveSegs[i + 1][1]) / 2];
+        let best = Infinity;
+        for (const g of w.geometry) {
+          const d = L.latLng(mid).distanceTo([g.lat, g.lon]);
+          if (d < best) best = d;
+        }
+        if (best < 25) roundSegs.add(i);
+      }
+    }
+
+    // 3) traffic lights on the route (random red/green)
+    for (const el of elements) {
+      if (el.type !== 'node' || (el.tags || {}).highway !== 'traffic_signals') continue;
+      const p = [el.lat, el.lon];
+      for (let i = 0; i < n; i++) {
+        if (distToSeg(p, moveSegs[i], moveSegs[i + 1]) < 30) {
+          const green = Math.random() < 0.18; // rare straight-through green
+          routeEvents.push({ idx: i, type: 'light', state: green ? 'green' : 'red', waitMs: 4000 + Math.random() * 9000, done: false });
+          break;
+        }
+      }
+    }
+
+    // 4) bus stops on the route
+    for (const el of elements) {
+      let p = null, nm = '';
+      if (el.type === 'node' && (el.tags || {}).highway === 'bus_stop') { p = [el.lat, el.lon]; nm = (el.tags || {}).name || 'Bus stop'; }
+      else if (el.type === 'way' && (el.tags || {}).highway === 'bus_stop' && el.geometry && el.geometry.length) {
+        const g = el.geometry[0]; p = [g.lat, g.lon]; nm = (el.tags || {}).name || 'Bus stop';
+      }
+      if (!p) continue;
+      for (let i = 0; i < n; i++) {
+        if (distToSeg(p, moveSegs[i], moveSegs[i + 1]) < 30) {
+          busStopsOnRoute.push({ idx: i, lat: p[0], lng: p[1], name: nm });
+          break;
+        }
+      }
+    }
+  }
+
+  // Build the per-segment target-speed profile. Starts from the (smoothed)
+  // road limits, then applies anticipation: slow zones around corners and
+  // roundabouts, and braking curves leading into every stop (red light, bus
+  // stop, final waypoint) so the bus accelerates/decelerates smoothly.
+  function buildSpeedProfile() {
+    const n = moveSegs.length;
+    // cumulative distance at each vertex
+    segCum = [0];
+    for (let i = 0; i < n - 1; i++) segCum.push(segCum[i] + Math.max(0.001, L.latLng(moveSegs[i]).distanceTo(moveSegs[i + 1])));
+
+    // smooth the road speeds (kills the random per-step fluctuation)
+    const raw = moveSpeeds.slice();
+    const sm = new Array(n - 1);
+    for (let i = 0; i < n - 1; i++) {
+      let sum = 0, cnt = 0;
+      for (let w = -3; w <= 3; w++) {
+        const j = i + w;
+        if (j >= 0 && j < n - 1) { sum += (raw[j] || FALLBACK_SPEED_MS); cnt++; }
+      }
+      sm[i] = Math.max(1.0, sum / cnt);
+    }
+    moveTargets = sm;
+
+    // corners: bearing change => slow to corner speed before/at the turn
+    for (let i = 1; i < n - 2; i++) {
+      const b1 = bearing(moveSegs[i - 1], moveSegs[i]);
+      const b2 = bearing(moveSegs[i], moveSegs[i + 1]);
+      let d = Math.abs(b2 - b1); if (d > 180) d = 360 - d;
+      if (d > CORNER_ANGLE) {
+        for (let k = Math.max(0, i - 1); k <= i + 1; k++) moveTargets[k] = Math.min(moveTargets[k], CORNER_SPEED_MS);
+      }
+    }
+
+    // roundabouts: slow zone + gentle approach
+    if (roundSegs.size) {
+      const minR = Math.min(...roundSegs);
+      roundSegs.forEach(i => { moveTargets[i] = Math.min(moveTargets[i], ROUND_SPEED_MS); });
+      // approach braking a couple of segments before the roundabout
+      for (let k = minR - 2; k < minR; k++) {
+        if (k >= 0) moveTargets[k] = Math.min(moveTargets[k], ROUND_SPEED_MS + 1.5);
+      }
+    }
+
+    // braking curves into stops (red lights + final waypoint)
+    routeEvents.forEach(ev => {
+      if (ev.type === 'light' && ev.state === 'red') {
+        brakeToStop(ev.idx);
+        moveEvents[ev.idx] = ev;
+      } else if (ev.type === 'light') {
+        moveEvents[ev.idx] = ev; // green: no braking, but keep event for info
+      }
+    });
+    // bus stops get a braking curve too (used by the STOP bell)
+    busStopsOnRoute.forEach(s => {
+      if (s.bell) brakeToStop(s.idx);
+    });
+    // final waypoint: brake to a stop at the end
+    brakeToStop(n - 2);
+  }
+
+  // Braking curve: reduce target speeds so the bus comes to a stop exactly at
+  // the given segment (used for red lights, bus stops, final waypoint).
+  function brakeToStop(stopSeg) {
+    if (!segCum || !segCum.length) return;
+    const stopCum = segCum[Math.min(stopSeg + 1, segCum.length - 1)];
+    for (let i = 0; i <= stopSeg; i++) {
+      const d = Math.max(0, stopCum - segCum[i]);
+      const lim = Math.sqrt(2 * DECEL * d);
+      if (lim < moveTargets[i]) moveTargets[i] = lim;
     }
   }
 
@@ -982,19 +1160,25 @@
         if (segs.length >= 2 && spds.length >= 1) {
           moveSegs = segs;
           moveSpeeds = spds;
-          await applyRealSpeedLimits();
+          await fetchRouteContext();
+          buildSpeedProfile();
           wpPreview = L.polyline(moveSegs, { color: '#00009C', weight: 4, opacity: .75, interactive: false }).addTo(map);
-          const mph = moveSpeeds.map(s => s * 2.23694);
+          const mph = moveTargets.map(s => s * 2.23694);
           const avg = Math.round(mph.reduce((a, b) => a + b, 0) / mph.length);
-          setStatus('Route found — real speed limits (avg ' + avg + ' mph) — press Move', '');
+          setStatus('Route ready — ' + routeEvents.length + ' light(s), ' + roundSegs.size + ' roundabout seg(s) — avg ' + avg + ' mph — press Move', '');
           return;
         }
       }
     } catch (e) { /* fall through to straight line */ }
     moveSegs = coords;
-    moveSpeeds = [];
+    moveSpeeds = new Array(coords.length - 1).fill(FALLBACK_SPEED_MS);
+    routeEvents = [];
+    moveEvents = [];
+    roundSegs = new Set();
+    busStopsOnRoute = [];
+    buildSpeedProfile();
     wpPreview = L.polyline(coords, { color: '#00009C', weight: 4, opacity: .75, dashArray: '4 6', interactive: false }).addTo(map);
-    setStatus('Straight-line route — press Move to drive (default speed)', '');
+    setStatus('Straight-line route — press Move to drive', '');
   }
 
   function drawMovePreview() {
@@ -1019,6 +1203,14 @@
     moveIdx = 0;
     moveActive = true;
     moveLast = null;
+    curSpeed = 0;
+    waitUntil = 0;
+    waitLabel = '';
+    stopReq = null;
+    stopReqName = '';
+    bellSteady = false;
+    const bl = document.getElementById('bellLight');
+    if (bl) bl.classList.remove('steady');
     moveT0 = performance.now();
     setStatus('Driving…', '');
     moveBtn.textContent = '■ Stop Move';
@@ -1030,9 +1222,53 @@
     if (!moveActive) return;
     const dt = Math.min(0.25, (now - moveT0) / 1000);
     moveT0 = now;
-    // Speed for the current road segment: real road speed from OSRM if we have
-    // it, otherwise the fallback default.
-    const curSpeed = moveSpeeds.length ? Math.max(0.8, moveSpeeds[moveIdx]) : FALLBACK_SPEED_MS;
+
+    // waiting at a traffic light / bus stop
+    if (waitUntil) {
+      if (now < waitUntil) { requestAnimationFrame(moveTick); return; }
+      waitUntil = 0;
+      if (waitLabel === 'bus') {
+        // leaving the requested bus stop -> bell light off
+        bellSteady = false;
+        const bl = document.getElementById('bellLight');
+        if (bl) bl.classList.remove('steady');
+      }
+      waitLabel = '';
+      setStatus('Departing…', '');
+    }
+
+    // target speed for the current segment
+    let target = moveTargets.length ? moveTargets[moveIdx] : FALLBACK_SPEED_MS;
+
+    // stop request active? force a stop at the requested bus stop segment
+    if (stopReq && stopReq.idx === moveIdx) {
+      target = 0;
+      if (curSpeed < 0.3) {
+        const nm = stopReqName || 'bus stop';
+        stopReq = null;
+        waitUntil = now + 30000;
+        waitLabel = 'bus';
+        setStatus('Stopped at ' + nm + ' — 30s', '');
+        requestAnimationFrame(moveTick);
+        return;
+      }
+    }
+
+    // arrive at a red light segment while slow -> wait
+    const ev = moveEvents[moveIdx];
+    if (ev && ev.type === 'light' && ev.state === 'red' && curSpeed < 0.5 && !ev.done) {
+      ev.done = true;
+      waitUntil = now + ev.waitMs;
+      waitLabel = 'light';
+      setStatus('Waiting at traffic light…', '');
+      requestAnimationFrame(moveTick);
+      return;
+    }
+
+    // accelerate / decelerate toward target with real physics
+    if (curSpeed < target) curSpeed = Math.min(target, curSpeed + ACCEL * dt);
+    else if (curSpeed > target) curSpeed = Math.max(target, curSpeed - DECEL * dt);
+
     moveDist += curSpeed * dt;
     // advance while we have consumed the current segment
     while (moveIdx < moveSegs.length - 1) {
@@ -1045,7 +1281,7 @@
     }
     if (moveIdx >= moveSegs.length - 1) {
       const end = moveSegs[moveSegs.length - 1];
-      moveTo(end, FALLBACK_SPEED_MS);
+      moveTo(end, curSpeed);
       endMove(true);
       return;
     }
@@ -1053,8 +1289,7 @@
     const b = moveSegs[moveIdx + 1];
     const segLen = Math.max(0.001, L.latLng(a).distanceTo(b));
     const t = Math.max(0, Math.min(1, moveDist / segLen));
-    const sp = moveSpeeds.length ? moveSpeeds[moveIdx] : FALLBACK_SPEED_MS;
-    moveTo([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], sp);
+    moveTo([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], curSpeed);
     requestAnimationFrame(moveTick);
   }
 
@@ -1083,6 +1318,68 @@
       setStatus('Move stopped', '');
       updateMoveBtn();
     }
+  }
+
+  // ---------------- STOP bell (request stop at next bus stop) ----------------
+  function bellBeep() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = 880;
+      g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.4, audioCtx.currentTime + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.28);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(audioCtx.currentTime + 0.3);
+    } catch (e) {}
+  }
+
+  function findStopAhead() {
+    // nearest bus stop at or ahead of the current segment
+    let best = null, bestD = Infinity;
+    busStopsOnRoute.forEach(s => {
+      const d = s.idx - moveIdx;
+      if (d >= 0 && d < bestD) { bestD = d; best = s; }
+    });
+    return best;
+  }
+
+  function pressStopBell() {
+    const bl = document.getElementById('bellLight');
+    if (!bl) return;
+    if (bellTimer) clearTimeout(bellTimer);
+    // flash three times while beeping
+    let flashes = 0;
+    const flash = () => {
+      flashes++;
+      bl.classList.add('flash');
+      bellBeep();
+      setTimeout(() => bl.classList.remove('flash'), 220);
+      if (flashes >= 3) {
+        // beep stops, light stays illuminated (steady) until the stop completes
+        bl.classList.add('steady');
+        bellSteady = true;
+        bellTimer = setTimeout(() => {
+          if (!moveActive) { bl.classList.remove('steady'); bellSteady = false; setStatus('No trip in progress — press Move first', ''); return; }
+          const stop = findStopAhead();
+          if (!stop) {
+            bl.classList.remove('steady'); bellSteady = false;
+            setStatus('No bus stop ahead on this trip', '');
+            return;
+          }
+          stopReq = { idx: stop.idx };
+          stopReqName = stop.name;
+          stop.bell = true;
+          brakeToStop(stop.idx);
+          setStatus('Request stop — ' + stop.name + ' ahead', '');
+        }, 400);
+        return;
+      }
+      bellTimer = setTimeout(flash, 360);
+    };
+    flash();
   }
 
   // ---------------- MBT trip / position ----------------
@@ -1403,6 +1700,7 @@
   // ---------------- Event wiring ----------------
   btn.addEventListener('click', () => (tracking ? stopTracking() : startTracking()));
   moveBtn.addEventListener('click', () => (moveActive ? endMove(false) : driveMove()));
+  document.getElementById('stopBell').addEventListener('click', pressStopBell);
   debugCheck.addEventListener('change', e => setDebugMode(e.target.checked));
   document.getElementById('centerBtn').addEventListener('click', () => {
     follow = true;
