@@ -95,19 +95,21 @@
   /* Bus STOP bell (red, at top of map view) */
   .bell {
     position: fixed; top: 8.2vh; right: 12px; z-index: 1050;
-    width: 58px; height: 58px; border-radius: 50%;
-    background: #d00000; color: #fff; border: 3px solid #fff;
+    width: 92px; height: 92px; border-radius: 50%;
+    background: #d00000; color: #fff; border: 4px solid #fff;
     box-shadow: 0 4px 14px rgba(0,0,0,.45);
-    cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: 1px;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0;
+    cursor: pointer; font-size: 17px; font-weight: 800; letter-spacing: 1px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0;
   }
   .bell:hover { background: #ff1a1a; }
   .bell .bellLight {
-    width: 10px; height: 10px; border-radius: 50%; background: #7f1d1d;
-    transition: background .1s, box-shadow .1s;
+    width: 18px; height: 18px; border-radius: 50%; background: #5c1010;
+    transition: background .05s, box-shadow .05s;
   }
-  .bell .bellLight.flash { background: #fff7ae; box-shadow: 0 0 12px #fff7ae; }
-  .bell .bellLight.steady { background: #fff7ae; box-shadow: 0 0 14px #fff7ae; animation: pulse 1s infinite; }
+  .bell .bellLight.flash { background: #fff7ae; box-shadow: 0 0 18px 6px #fff7ae; }
+  .bell .bellLight.steady { background: #fff7ae; box-shadow: 0 0 22px 8px #fff7ae; animation: pulse 1s infinite; }
+  @keyframes bellPulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+  .bell.active { animation: bellPulse .5s infinite; }
 
   .direction-icon { transition: transform .25s ease; }
   .time-tag {
@@ -451,6 +453,7 @@
   let lastLabelMin = -1;
   let sessionStartTs = 0;
   const timeTags = L.layerGroup().addTo(map);
+  const busLaneLayer = L.layerGroup().addTo(map);
   const MIN_STEP = 12;
   const SIM_SPEED = 2;
   let wakeLock = null;
@@ -811,7 +814,7 @@
   const FALLBACK_SPEED_MS = 13.4; // 30 mph, used only when no online road data
   const ACCEL = 1.6;       // m/s^2 comfortable bus acceleration
   const DECEL = 2.2;       // m/s^2 braking
-  const ROUND_SPEED_MS = 4.5;    // ~10 mph through roundabouts
+  const ROUND_SPEED_MS = 8.05;    // 18 mph through roundabouts
   const CORNER_SPEED_MS = 6.7;   // ~15 mph through turns
   const CORNER_ANGLE = 28;       // degrees of bearing change = "corner"
   let waypoints = [];
@@ -932,7 +935,11 @@
     if (v === 'none' || v === 'signals' || v === 'variable') return 70;
     if (v === 'walk' || v === 'foot') return 5;
     if (v === 'gb:national' || v === 'uk:national') return 60;
+    if (v === 'gb:nsl_single' || v === 'uk:nsl_single') return 60;
+    if (v === 'gb:nsl_dual' || v === 'uk:nsl_dual') return 70;
     if (v === 'gb:motorway' || v === 'uk:motorway') return 70;
+    if (v === 'gb:urban' || v === 'uk:urban' || v === 'urban') return 30;
+    if (v === 'rural') return 60;
     const m = v.match(/^(\d+(?:\.\d+)?)\s*(mph|km\/?h)?$/);
     if (m) {
       const n = parseFloat(m[1]);
@@ -953,13 +960,26 @@
     return proj.distanceTo(p);
   }
 
+  // Minimum distance from point p to a polyline geometry [{lat,lon}...]
+  function distToGeom(p, geom) {
+    let best = Infinity;
+    for (let i = 0; i < geom.length; i++) {
+      const g = [geom[i].lat, geom[i].lon];
+      const d = (i + 1 < geom.length) ? distToSeg(p, g, [geom[i + 1].lat, geom[i + 1].lon]) : L.latLng(p).distanceTo(g);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
   // Fetch route context from OSM (Overpass): speed limits, traffic lights,
-  // roundabouts and bus stops around the route, then build the speed profile.
+  // give-way/stop junctions, roundabouts, bus lanes and bus stops around the
+  // route, then build the speed profile.
   async function fetchRouteContext() {
     routeEvents = [];
     moveEvents = [];
     roundSegs = new Set();
     busStopsOnRoute = [];
+    busLaneLayer.clearLayers();
     if (moveSegs.length < 2) return;
     let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
     moveSegs.forEach(p => {
@@ -971,9 +991,15 @@
     const q = '[out:json][timeout:30];(' +
       'way["highway"]["maxspeed"](' + bbox + ');' +
       'node["highway"="traffic_signals"](' + bbox + ');' +
+      'node["highway"="give_way"](' + bbox + ');' +
+      'node["highway"="stop"](' + bbox + ');' +
       'way["junction"="roundabout"](' + bbox + ');' +
       'node["highway"="bus_stop"](' + bbox + ');' +
       'way["highway"="bus_stop"](' + bbox + ');' +
+      'node["amenity"="bus_station"](' + bbox + ');' +
+      'way["amenity"="bus_station"](' + bbox + ');' +
+      'way["highway"]["bus"~"yes|designated"](' + bbox + ');' +
+      'way["bus:lanes"](' + bbox + ');' +
       ');out tags geom;';
     const mirrors = [
       'https://overpass-api.de/api/interpreter?data=',
@@ -990,7 +1016,8 @@
     }
     if (!elements.length) return;
 
-    // 1) speed limits per segment
+    // 1) speed limits per segment — pick the maxspeed of the NEAREST road,
+    //    measured to the road's whole geometry (polyline), not just its nodes.
     const n = moveSegs.length - 1;
     const limits = [];
     const ways = elements.filter(w => w.type === 'way' && w.geometry && w.geometry.length);
@@ -999,17 +1026,15 @@
       let best = Infinity, mph = null;
       for (const w of ways) {
         const t = w.tags || {};
-        const ms = parseMaxspeed(t.maxspeed || t['maxspeed:forward'] || t['maxspeed:backward'] || t['maxspeed:type']);
+        const ms = parseMaxspeed(t.maxspeed || t['maxspeed:forward'] || t['maxspeed:backward'] || t['maxspeed:type'] || t['maxspeed:advisory']);
         if (ms == null) continue;
-        for (const g of w.geometry) {
-          const d = L.latLng(mid).distanceTo([g.lat, g.lon]);
-          if (d < best) { best = d; mph = ms; }
-        }
+        const d = distToGeom(mid, w.geometry);
+        if (d < best) { best = d; mph = ms; }
       }
-      limits.push((best < 25 && mph != null) ? mph * 0.44704 : null);
+      limits.push((best < 40 && mph != null) ? mph * 0.44704 : null);
     }
     for (let i = 0; i < n; i++) {
-      if (limits[i] != null && moveSpeeds[i]) moveSpeeds[i] = limits[i];
+      if (limits[i] != null) moveSpeeds[i] = limits[i];
     }
 
     // 2) roundabout segments
@@ -1017,43 +1042,58 @@
       if (w.type !== 'way' || (w.tags || {}).junction !== 'roundabout' || !w.geometry) continue;
       for (let i = 0; i < n; i++) {
         const mid = [(moveSegs[i][0] + moveSegs[i + 1][0]) / 2, (moveSegs[i][1] + moveSegs[i + 1][1]) / 2];
-        let best = Infinity;
-        for (const g of w.geometry) {
-          const d = L.latLng(mid).distanceTo([g.lat, g.lon]);
-          if (d < best) best = d;
-        }
-        if (best < 25) roundSegs.add(i);
+        if (distToGeom(mid, w.geometry) < 30) roundSegs.add(i);
       }
     }
 
-    // 3) traffic lights on the route (random red/green)
+    // 3) traffic lights + give-way/stop junctions on the route (random timing)
     for (const el of elements) {
-      if (el.type !== 'node' || (el.tags || {}).highway !== 'traffic_signals') continue;
+      if (el.type !== 'node') continue;
+      const hw = (el.tags || {}).highway;
+      if (hw !== 'traffic_signals' && hw !== 'give_way' && hw !== 'stop') continue;
       const p = [el.lat, el.lon];
       for (let i = 0; i < n; i++) {
         if (distToSeg(p, moveSegs[i], moveSegs[i + 1]) < 30) {
-          const green = Math.random() < 0.18; // rare straight-through green
-          routeEvents.push({ idx: i, type: 'light', state: green ? 'green' : 'red', waitMs: 4000 + Math.random() * 9000, done: false });
+          if (hw === 'traffic_signals') {
+            const green = Math.random() < 0.18; // rare straight-through green
+            routeEvents.push({ idx: i, type: 'light', state: green ? 'green' : 'red', waitMs: 30000, done: false });
+          } else {
+            // give_way / stop: short junction stop
+            routeEvents.push({ idx: i, type: 'junction', state: 'stop', waitMs: hw === 'stop' ? 4000 : 2000, done: false });
+          }
           break;
         }
       }
     }
 
-    // 4) bus stops on the route
+    // 4) bus stops + bus stations on the route
     for (const el of elements) {
-      let p = null, nm = '';
-      if (el.type === 'node' && (el.tags || {}).highway === 'bus_stop') { p = [el.lat, el.lon]; nm = (el.tags || {}).name || 'Bus stop'; }
-      else if (el.type === 'way' && (el.tags || {}).highway === 'bus_stop' && el.geometry && el.geometry.length) {
-        const g = el.geometry[0]; p = [g.lat, g.lon]; nm = (el.tags || {}).name || 'Bus stop';
+      let p = null, nm = '', isStation = false;
+      const t = el.tags || {};
+      if (el.type === 'node') {
+        if (t.highway === 'bus_stop') { p = [el.lat, el.lon]; nm = t.name || 'Bus stop'; }
+        else if (t.amenity === 'bus_station') { p = [el.lat, el.lon]; nm = t.name || 'Bus station'; isStation = true; }
+      } else if (el.type === 'way' && el.geometry && el.geometry.length) {
+        if (t.highway === 'bus_stop') { const g = el.geometry[0]; p = [g.lat, g.lon]; nm = t.name || 'Bus stop'; }
+        else if (t.amenity === 'bus_station') { const g = el.geometry[0]; p = [g.lat, g.lon]; nm = t.name || 'Bus station'; isStation = true; }
       }
       if (!p) continue;
       for (let i = 0; i < n; i++) {
         if (distToSeg(p, moveSegs[i], moveSegs[i + 1]) < 30) {
-          busStopsOnRoute.push({ idx: i, lat: p[0], lng: p[1], name: nm });
+          busStopsOnRoute.push({ idx: i, lat: p[0], lng: p[1], name: nm, station: isStation, served: false });
           break;
         }
       }
     }
+
+    // 5) bus lanes: draw the bus lanes/bus-priority roads the route uses
+    const busLanes = elements.filter(w => w.type === 'way' && w.geometry && (
+      (w.tags || {}).bus === 'yes' || (w.tags || {}).bus === 'designated' || (w.tags || {})['bus:lanes']
+    ));
+    busLanes.forEach(w => {
+      const pts = w.geometry.map(g => [g.lat, g.lon]);
+      L.polyline(pts, { color: '#f59e0b', weight: 3, opacity: .6, dashArray: '4 6', interactive: false }).addTo(busLaneLayer);
+    });
   }
 
   // Build the per-segment target-speed profile. Starts from the (smoothed)
@@ -1066,12 +1106,13 @@
     segCum = [0];
     for (let i = 0; i < n - 1; i++) segCum.push(segCum[i] + Math.max(0.001, L.latLng(moveSegs[i]).distanceTo(moveSegs[i + 1])));
 
-    // smooth the road speeds (kills the random per-step fluctuation)
+    // smooth the road speeds (kills the random per-step fluctuation) while
+    // preserving distinct posted limits (narrow window)
     const raw = moveSpeeds.slice();
     const sm = new Array(n - 1);
     for (let i = 0; i < n - 1; i++) {
       let sum = 0, cnt = 0;
-      for (let w = -3; w <= 3; w++) {
+      for (let w = -2; w <= 2; w++) {
         const j = i + w;
         if (j >= 0 && j < n - 1) { sum += (raw[j] || FALLBACK_SPEED_MS); cnt++; }
       }
@@ -1099,19 +1140,20 @@
       }
     }
 
-    // braking curves into stops (red lights + final waypoint)
+    // braking curves into stops (red lights + junctions + final waypoint)
     routeEvents.forEach(ev => {
       if (ev.type === 'light' && ev.state === 'red') {
+        brakeToStop(ev.idx);
+        moveEvents[ev.idx] = ev;
+      } else if (ev.type === 'junction') {
         brakeToStop(ev.idx);
         moveEvents[ev.idx] = ev;
       } else if (ev.type === 'light') {
         moveEvents[ev.idx] = ev; // green: no braking, but keep event for info
       }
     });
-    // bus stops get a braking curve too (used by the STOP bell)
-    busStopsOnRoute.forEach(s => {
-      if (s.bell) brakeToStop(s.idx);
-    });
+    // bus stops get a braking curve so the bus can pull in and serve them
+    busStopsOnRoute.forEach(s => brakeToStop(s.idx));
     // final waypoint: brake to a stop at the end
     brakeToStop(n - 2);
   }
@@ -1245,6 +1287,7 @@
       target = 0;
       if (curSpeed < 0.3) {
         const nm = stopReqName || 'bus stop';
+        busStopsOnRoute.forEach(s => { if (s.idx === stopReq.idx) s.served = true; });
         stopReq = null;
         waitUntil = now + 30000;
         waitLabel = 'bus';
@@ -1254,8 +1297,30 @@
       }
     }
 
-    // arrive at a red light segment while slow -> wait
+    // natural pull-in at an unserved bus stop along the route
+    if (curSpeed < 0.4) {
+      const stopHere = busStopsOnRoute.find(s => s.idx === moveIdx && !s.served);
+      if (stopHere) {
+        stopHere.served = true;
+        stopHere.bell = false;
+        waitUntil = now + 15000;
+        waitLabel = 'light';
+        setStatus('Serving ' + stopHere.name + '…', '');
+        requestAnimationFrame(moveTick);
+        return;
+      }
+    }
+
+    // arrive at a red light / give-way / stop junction segment while slow -> wait
     const ev = moveEvents[moveIdx];
+    if (ev && ev.type === 'junction' && curSpeed < 0.5 && !ev.done) {
+      ev.done = true;
+      waitUntil = now + ev.waitMs;
+      waitLabel = 'light';
+      setStatus((ev.waitMs >= 3000 ? 'Waiting at stop junction…' : 'Giving way at junction…'), '');
+      requestAnimationFrame(moveTick);
+      return;
+    }
     if (ev && ev.type === 'light' && ev.state === 'red' && curSpeed < 0.5 && !ev.done) {
       ev.done = true;
       waitUntil = now + ev.waitMs;
@@ -1315,31 +1380,49 @@
       setStatus('Arrived at final waypoint', '');
       clearWaypoints();
     } else {
-      setStatus('Move stopped', '');
-      updateMoveBtn();
+      // Stop Move: keep the vehicle where it is, clear the waypoints so the
+      // next route starts from the current position.
+      setStatus('Move stopped — position kept, waypoints cleared', '');
+      clearWaypoints();
+      moveSegs = [];
+      moveSpeeds = [];
+      moveTargets = [];
+      routeEvents = [];
+      moveEvents = [];
+      roundSegs = new Set();
+      busStopsOnRoute = [];
+      stopReq = null;
+      stopReqName = '';
+      waitUntil = 0;
+      waitLabel = '';
+      if (wpPreview) { map.removeLayer(wpPreview); wpPreview = null; }
+      busLaneLayer.clearLayers();
     }
   }
 
   // ---------------- STOP bell (request stop at next bus stop) ----------------
-  function bellBeep() {
+  function bellBeep(durationMs) {
     try {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') audioCtx.resume();
       const o = audioCtx.createOscillator();
       const g = audioCtx.createGain();
-      o.type = 'sine'; o.frequency.value = 880;
-      g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.4, audioCtx.currentTime + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.28);
+      o.type = 'square'; o.frequency.value = 880;
+      const t0 = audioCtx.currentTime;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.35, t0 + 0.03);
+      g.gain.setValueAtTime(0.35, t0 + Math.max(0, durationMs / 1000 - 0.06));
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.max(0.08, durationMs / 1000));
       o.connect(g); g.connect(audioCtx.destination);
-      o.start(); o.stop(audioCtx.currentTime + 0.3);
+      o.start(t0); o.stop(t0 + Math.max(0.1, durationMs / 1000 + 0.05));
     } catch (e) {}
   }
 
   function findStopAhead() {
-    // nearest bus stop at or ahead of the current segment
+    // nearest unserved bus stop at or ahead of the current segment
     let best = null, bestD = Infinity;
     busStopsOnRoute.forEach(s => {
+      if (s.served) return;
       const d = s.idx - moveIdx;
       if (d >= 0 && d < bestD) { bestD = d; best = s; }
     });
@@ -1348,16 +1431,21 @@
 
   function pressStopBell() {
     const bl = document.getElementById('bellLight');
-    if (!bl) return;
+    const bell = document.getElementById('stopBell');
+    if (!bl || !bell) return;
     if (bellTimer) clearTimeout(bellTimer);
-    // flash three times while beeping
+    // flash the whole bell three times while one continuous beep plays
+    const FLASH_GAP = 420;
+    const totalMs = FLASH_GAP * 3;
+    bellBeep(totalMs + 40);
+    bell.classList.add('active');
     let flashes = 0;
     const flash = () => {
       flashes++;
       bl.classList.add('flash');
-      bellBeep();
-      setTimeout(() => bl.classList.remove('flash'), 220);
+      setTimeout(() => bl.classList.remove('flash'), 260);
       if (flashes >= 3) {
+        bell.classList.remove('active');
         // beep stops, light stays illuminated (steady) until the stop completes
         bl.classList.add('steady');
         bellSteady = true;
@@ -1377,7 +1465,7 @@
         }, 400);
         return;
       }
-      bellTimer = setTimeout(flash, 360);
+      bellTimer = setTimeout(flash, FLASH_GAP);
     };
     flash();
   }
