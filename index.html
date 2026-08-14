@@ -994,6 +994,7 @@
       'node["highway"="give_way"](' + bbox + ');' +
       'node["highway"="stop"](' + bbox + ');' +
       'way["junction"="roundabout"](' + bbox + ');' +
+      'node["highway"="mini_roundabout"](' + bbox + ');' +
       'node["highway"="bus_stop"](' + bbox + ');' +
       'way["highway"="bus_stop"](' + bbox + ');' +
       'node["amenity"="bus_station"](' + bbox + ');' +
@@ -1037,12 +1038,19 @@
       if (limits[i] != null) moveSpeeds[i] = limits[i];
     }
 
-    // 2) roundabout segments
+    // 2) roundabout segments (full roundabouts + mini roundabouts)
     for (const w of elements) {
-      if (w.type !== 'way' || (w.tags || {}).junction !== 'roundabout' || !w.geometry) continue;
-      for (let i = 0; i < n; i++) {
-        const mid = [(moveSegs[i][0] + moveSegs[i + 1][0]) / 2, (moveSegs[i][1] + moveSegs[i + 1][1]) / 2];
-        if (distToGeom(mid, w.geometry) < 30) roundSegs.add(i);
+      if (w.type === 'way' && (w.tags || {}).junction === 'roundabout' && w.geometry) {
+        for (let i = 0; i < n; i++) {
+          const mid = [(moveSegs[i][0] + moveSegs[i + 1][0]) / 2, (moveSegs[i][1] + moveSegs[i + 1][1]) / 2];
+          if (distToGeom(mid, w.geometry) < 30) roundSegs.add(i);
+        }
+      }
+      if (w.type === 'node' && (w.tags || {}).highway === 'mini_roundabout') {
+        const p = [w.lat, w.lon];
+        for (let i = 0; i < n; i++) {
+          if (distToSeg(p, moveSegs[i], moveSegs[i + 1]) < 30) roundSegs.add(i);
+        }
       }
     }
 
@@ -1094,6 +1102,26 @@
       const pts = w.geometry.map(g => [g.lat, g.lon]);
       L.polyline(pts, { color: '#f59e0b', weight: 3, opacity: .6, dashArray: '4 6', interactive: false }).addTo(busLaneLayer);
     });
+
+    // 6) pull into the nearest unserved bus stop/station at the END of the
+    //    route so the bus actually enters the station instead of stopping on
+    //    the road before it. Appends one segment to moveSegs.
+    if (busStopsOnRoute.length) {
+      const lastP = moveSegs[moveSegs.length - 1];
+      let best = null, bestD = Infinity;
+      busStopsOnRoute.forEach(s => {
+        if (s.served) return;
+        const d = Math.sqrt(Math.pow(s.lat - lastP[0], 2) + Math.pow(s.lng - lastP[1], 2)) * 111000;
+        if (d < bestD) { bestD = d; best = s; }
+      });
+      if (best && bestD < 80) {
+        moveSegs.push([best.lat, best.lng]);
+        moveSpeeds.push(moveSpeeds[moveSpeeds.length - 1] || FALLBACK_SPEED_MS);
+        best.idx = moveSegs.length - 2; // the appended segment leads into the stop
+        best.served = true;
+        best.bell = false;
+      }
+    }
   }
 
   // Build the per-segment target-speed profile. Starts from the (smoothed)
@@ -1130,23 +1158,27 @@
       }
     }
 
-    // roundabouts: slow zone + gentle approach
+    // roundabouts: slow zone + a proper braking/anticipation curve so the bus
+    // decelerates INTO the roundabout (or mini roundabout) and exits smoothly
     if (roundSegs.size) {
       const minR = Math.min(...roundSegs);
       roundSegs.forEach(i => { moveTargets[i] = Math.min(moveTargets[i], ROUND_SPEED_MS); });
-      // approach braking a couple of segments before the roundabout
-      for (let k = minR - 2; k < minR; k++) {
-        if (k >= 0) moveTargets[k] = Math.min(moveTargets[k], ROUND_SPEED_MS + 1.5);
+      // braking curve from the current road speed down to roundabout speed at
+      // the roundabout's entry segment (minR), not just a 2-segment cap
+      brakeToSpeed(minR, ROUND_SPEED_MS);
+      // keep the exit a touch higher so it recovers after the roundabout
+      for (let k = minR + 1; k < Math.min(minR + 3, n - 1); k++) {
+        moveTargets[k] = Math.max(moveTargets[k], ROUND_SPEED_MS);
       }
     }
 
     // braking curves into stops (red lights + junctions + final waypoint)
     routeEvents.forEach(ev => {
       if (ev.type === 'light' && ev.state === 'red') {
-        brakeToStop(ev.idx);
+        brakeToEvent(ev.idx);
         moveEvents[ev.idx] = ev;
       } else if (ev.type === 'junction') {
-        brakeToStop(ev.idx);
+        brakeToEvent(ev.idx);
         moveEvents[ev.idx] = ev;
       } else if (ev.type === 'light') {
         moveEvents[ev.idx] = ev; // green: no braking, but keep event for info
@@ -1156,6 +1188,32 @@
     busStopsOnRoute.forEach(s => brakeToStop(s.idx));
     // final waypoint: brake to a stop at the end
     brakeToStop(n - 2);
+  }
+
+  // Braking curve for an EVENT (red light / give-way / stop junction): the bus
+  // must be (near) stationary when it REACHES the start of the event segment,
+  // so the wait logic (curSpeed < 0.5) can trigger reliably.
+  function brakeToEvent(stopSeg) {
+    if (!segCum || !segCum.length) return;
+    const stopCum = segCum[Math.min(stopSeg, segCum.length - 1)];
+    for (let i = 0; i <= stopSeg; i++) {
+      const d = Math.max(0, stopCum - segCum[i]);
+      const lim = Math.sqrt(2 * DECEL * d);
+      if (lim < moveTargets[i]) moveTargets[i] = lim;
+    }
+  }
+
+  // Braking curve: reduce target speeds so the bus decelerates to the given
+  // target speed by the time it reaches the given segment (used for
+  // roundabouts). Uses the physics formula: v_final^2 = v^2 - 2*a*d
+  function brakeToSpeed(stopSeg, targetSpeed) {
+    if (!segCum || !segCum.length) return;
+    const stopCum = segCum[Math.min(stopSeg, segCum.length - 1)];
+    for (let i = 0; i <= stopSeg; i++) {
+      const d = Math.max(0, stopCum - segCum[i]);
+      const lim = Math.sqrt(targetSpeed * targetSpeed + 2 * DECEL * d);
+      if (lim < moveTargets[i]) moveTargets[i] = lim;
+    }
   }
 
   // Braking curve: reduce target speeds so the bus comes to a stop exactly at
@@ -1289,9 +1347,9 @@
         const nm = stopReqName || 'bus stop';
         busStopsOnRoute.forEach(s => { if (s.idx === stopReq.idx) s.served = true; });
         stopReq = null;
-        waitUntil = now + 30000;
+        waitUntil = now + 15000;
         waitLabel = 'bus';
-        setStatus('Stopped at ' + nm + ' — 30s', '');
+        setStatus('Stopped at ' + nm + ' — 15s', '');
         requestAnimationFrame(moveTick);
         return;
       }
@@ -1303,7 +1361,7 @@
       if (stopHere) {
         stopHere.served = true;
         stopHere.bell = false;
-        waitUntil = now + 15000;
+        waitUntil = now + 8000;
         waitLabel = 'light';
         setStatus('Serving ' + stopHere.name + '…', '');
         requestAnimationFrame(moveTick);
@@ -1311,8 +1369,10 @@
       }
     }
 
-    // arrive at a red light / give-way / stop junction segment while slow -> wait
-    const ev = moveEvents[moveIdx];
+    // arrive at a red light / give-way / stop junction segment while slow -> wait.
+    // brakeToEvent stops the bus just BEFORE the event segment, so when stopped
+    // moveIdx points at the segment before it — check one ahead too.
+    const ev = moveEvents[moveIdx] || moveEvents[moveIdx + 1];
     if (ev && ev.type === 'junction' && curSpeed < 0.5 && !ev.done) {
       ev.done = true;
       waitUntil = now + ev.waitMs;
@@ -1376,45 +1436,47 @@
 
   function endMove(completed) {
     moveActive = false;
-    if (completed) {
-      setStatus('Arrived at final waypoint', '');
-      clearWaypoints();
-    } else {
-      // Stop Move: keep the vehicle where it is, clear the waypoints so the
-      // next route starts from the current position.
-      setStatus('Move stopped — position kept, waypoints cleared', '');
-      clearWaypoints();
-      moveSegs = [];
-      moveSpeeds = [];
-      moveTargets = [];
-      routeEvents = [];
-      moveEvents = [];
-      roundSegs = new Set();
-      busStopsOnRoute = [];
-      stopReq = null;
-      stopReqName = '';
-      waitUntil = 0;
-      waitLabel = '';
-      if (wpPreview) { map.removeLayer(wpPreview); wpPreview = null; }
-      busLaneLayer.clearLayers();
-    }
+    // Keep the vehicle where it is, clear the waypoints and ALL route state in
+    // both cases so the next "Move" always recomputes from the current marker
+    // position instead of reusing a stale route from the original start.
+    setStatus(completed ? 'Arrived at final waypoint' : 'Move stopped — position kept, waypoints cleared', '');
+    clearWaypoints();
+    moveSegs = [];
+    moveSpeeds = [];
+    moveTargets = [];
+    segCum = [];
+    routeEvents = [];
+    moveEvents = [];
+    roundSegs = new Set();
+    busStopsOnRoute = [];
+    stopReq = null;
+    stopReqName = '';
+    waitUntil = 0;
+    waitLabel = '';
+    moveLast = null;
+    if (wpPreview) { map.removeLayer(wpPreview); wpPreview = null; }
+    busLaneLayer.clearLayers();
   }
 
   // ---------------- STOP bell (request stop at next bus stop) ----------------
-  function bellBeep(durationMs) {
+  function bellBeep() {
     try {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === 'suspended') audioCtx.resume();
-      const o = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      o.type = 'square'; o.frequency.value = 880;
       const t0 = audioCtx.currentTime;
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(0.35, t0 + 0.03);
-      g.gain.setValueAtTime(0.35, t0 + Math.max(0, durationMs / 1000 - 0.06));
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.max(0.08, durationMs / 1000));
-      o.connect(g); g.connect(audioCtx.destination);
-      o.start(t0); o.stop(t0 + Math.max(0.1, durationMs / 1000 + 0.05));
+      // two-note chime: F#6 (1479.98 Hz) for 1s, then D#6 (1244.51 Hz) for 2s
+      [ { f: 1479.98, d: 1 }, { f: 1244.51, d: 2 } ].forEach(n => {
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = 'square'; o.frequency.value = n.f;
+        const start = t0 + (n.d === 1 ? 0 : 1);
+        g.gain.setValueAtTime(0.0001, start);
+        g.gain.exponentialRampToValueAtTime(0.35, start + 0.03);
+        g.gain.setValueAtTime(0.35, start + Math.max(0, n.d - 0.06));
+        g.gain.exponentialRampToValueAtTime(0.0001, start + Math.max(0.08, n.d));
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(start); o.stop(start + Math.max(0.1, n.d + 0.05));
+      });
     } catch (e) {}
   }
 
@@ -1436,8 +1498,7 @@
     if (bellTimer) clearTimeout(bellTimer);
     // flash the whole bell three times while one continuous beep plays
     const FLASH_GAP = 420;
-    const totalMs = FLASH_GAP * 3;
-    bellBeep(totalMs + 40);
+    bellBeep();
     bell.classList.add('active');
     let flashes = 0;
     const flash = () => {
