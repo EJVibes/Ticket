@@ -29,12 +29,17 @@
   button:hover { background: #000082; }
   button.ghost { background: #3a3f4b; color: #e6e8ee; }
   button.issue {
-    position: fixed; left: 0; bottom: 10vh; z-index: 1000;
-    background: #383838; color: #fff; border-radius: 0; width: 100%; height: 10vh;
+    background: #383838; color: #fff; border-radius: 0; width: 100%; height: 100%;
     font-size: 16px; margin: 0; letter-spacing: 1px;
   }
   button.issue.live { background: #00009C; }
   button.issue.live:hover { background: #000082; }
+
+  .actionbar {
+    position: fixed; left: 0; right: 0; bottom: 10vh; height: 10vh; z-index: 1000;
+    display: flex; gap: 2px; padding: 0;
+  }
+  .actionbar button { flex: 1; }
 
   .status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #fff; white-space: nowrap; }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; }
@@ -133,6 +138,91 @@
   .spinner { display: none; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
   .spinner.show { display: inline-block; }
   @keyframes spin { to { transform: rotate(360deg) } }
+
+  /* Burger menu */
+  .burger { position: relative; }
+  .burger .menu {
+    position: fixed; top: 7.5vh; right: 8px; z-index: 1300; min-width: 210px;
+    background: #fff; color: #000; border-radius: 6px; overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5); display: none;
+  }
+  .burger .menu.show { display: block; }
+  .burger .menu button {
+    display: block; width: 100%; text-align: left; background: #fff; color: #000;
+    border-radius: 0; padding: 13px 16px; font-size: 14px; border-bottom: 1px solid #eee; white-space: normal;
+  }
+  .burger .menu button:hover { background: #f0f0f0; color: #000; }
+  .burger .menu button small { display: block; font-weight: 400; font-size: 11px; color: #888; margin-top: 2px; }
+  .burger .menu .menuTitle { padding: 12px 16px; font-size: 11px; letter-spacing: 2px; color: #888; border-bottom: 1px solid #eee; background: #fafafa; }
+
+  /* Settings modal: AD protection */
+  .adList { max-height: 30vh; overflow-y: auto; margin: 4px 16px 0; }
+  .adItem {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 6px;
+    background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; color: #333;
+  }
+  .adItem .adDot { width: 10px; height: 10px; border-radius: 50%; background: #ef4444; flex-shrink: 0; }
+  .adItem .adInfo { flex: 1; line-height: 1.35; }
+  .adItem .adInfo small { display: block; color: #888; }
+  .adItem .adDel { background: #dc2626; padding: 5px 9px; font-size: 12px; flex-shrink: 0; }
+  .adItem .adDel:hover { background: #b91c1c; }
+  .adAddRow { display: flex; gap: 8px; margin: 12px 16px; align-items: center; }
+  .adAddRow button { flex: 1; }
+  .adHint { font-size: 11px; color: #666; margin: 4px 16px; line-height: 1.5; }
+
+  /* Full-screen T200 login page */
+  #loginModal { background: #000; z-index: 3000; }
+  #loginModal .card {
+    background: #000; color: #fff; box-shadow: none; border-radius: 0;
+    width: min(96vw, 520px); max-height: 96vh; display: flex; flex-direction: column;
+  }
+  #loginModal .cardTitle { background: transparent; color: #fff; justify-content: center; }
+  #loginModal .cardTitle h2 { font-size: 26px; letter-spacing: 4px; color: #fff; }
+  #loginModal .cardTitle span { font-size: 12px; letter-spacing: 2px; color: #9aa0aa; }
+  #loginModal .hint { color: #bbb; text-align: center; }
+  #loginModal #loginWrap { margin: 6px 16px 0; }
+  #loginDisplay {
+    background: #111; color: #FFB210; border: 1px solid #333; border-radius: 4px;
+    text-align: center; font-size: 24px; letter-spacing: 6px; padding: 14px 10px;
+  }
+  #loginModal .numpad { margin: 8px 16px; }
+  #loginModal .numpad button { height: 58px; font-size: 22px; background: #1c1c1c; color: #fff; }
+  #loginModal .numpad button:hover { background: #333; }
+  #loginModal .numpad .keyC { background: #3a3a3a; }
+  #loginModal .numpad .keyC:hover { background: #555; }
+  #loginModal .numpad .keyOk { background: #009b15; }
+  #loginModal .numpad .keyOk:hover { background: #007f12; }
+  #loginModal .row { margin-top: 0; }
+  #loginModal #loginErr { margin: 0 16px 6px; color: #ff6b6b; text-align: center; }
+  #loginModal .lnk { color: #7ab8ff; }
+
+  /* Waypoint + move preview */
+  .wp-marker {
+    display: flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 50%; background: #00009C;
+    color: #fff; font-size: 12px; font-weight: 800; border: 2px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.5); text-align: center; line-height: 1.1;
+  }
+  .wp-marker small { display: block; font-size: 8px; font-weight: 400; opacity: .9; }
+
+  /* Multi-waypoint pin with +/- controls at top corners */
+  .wp-pin { position: relative; width: 44px; height: 52px; }
+  .wp-plus, .wp-minus {
+    position: absolute; top: -8px; width: 18px; height: 18px; border-radius: 50%;
+    border: 1.5px solid #fff; color: #fff; font-weight: 800; font-size: 14px; line-height: 1;
+    cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,.5); z-index: 5;
+  }
+  .wp-plus { left: -8px; background: #009b15; }
+  .wp-plus:hover { background: #007f12; }
+  .wp-minus { right: -8px; background: #dc2626; }
+  .wp-minus:hover { background: #b91c1c; }
+  .wp-num {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    width: 28px; height: 28px; background: #00009C; color: #fff; border: 2px solid #fff;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px; box-shadow: 0 2px 6px rgba(0,0,0,.45);
+  }
 </style>
 </head>
 <body>
@@ -151,7 +241,15 @@
         <span class="sw"></span>
         <span>Drag</span>
       </label>
-      <button class="ghost" id="accountBtn">Account</button>
+      <div class="burger">
+        <button class="ghost" id="burgerBtn">☰</button>
+        <div class="menu" id="burgerMenu">
+          <div class="menuTitle">GPS SIM · MyBusTimes</div>
+          <button id="menuAccount">Account / Bus <small id="menuAccountSub">Sign in to broadcast</small></button>
+          <button id="menuSettings">Settings <small>AD Protection, blocked areas</small></button>
+          <button id="menuSignout">Sign out</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -169,7 +267,10 @@
 
   <button class="center-btn" id="centerBtn" title="Center on you">◎</button>
 
-  <button class="issue" id="startBtn">Start Tracking</button>
+  <div class="actionbar">
+    <button class="issue" id="startBtn">Start Tracking</button>
+    <button class="issue" id="moveBtn">Move</button>
+  </div>
 
   <div class="footer">
     <div class="status-row">
@@ -251,11 +352,6 @@
         <div class="options">
           <div class="field"><label>Bus</label><select id="busSelect"></select></div>
           <div class="field"><label>Route (shown on MBT map)</label><select id="routeSelect"></select></div>
-          <label class="debug-toggle" style="margin:4px 0">
-            <input type="checkbox" id="snapCheck" checked />
-            <span class="sw"></span>
-            <span>Snap position to route</span>
-          </label>
           <div class="field"><label>Trip ends</label>
             <div style="display:flex;gap:8px;align-items:center">
               <input type="datetime-local" id="endTimeInput" />
@@ -270,6 +366,31 @@
       </div>
 
       <p id="setupErr"></p>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div class="overlay" id="settingsModal">
+    <div class="card">
+      <div class="cardTitle"><h2>Settings</h2><span>AD Protection</span></div>
+      <p class="hint">Block-out areas: while your GPS is inside a blocked circle, position data is <b>not</b> sent to MBT.</p>
+      <div class="field"><label>Enable AD Protection</label>
+        <label class="debug-toggle" style="margin:0">
+          <input type="checkbox" id="adEnabled" checked />
+          <span class="sw"></span>
+          <span id="adEnabledLabel">On</span>
+        </label>
+      </div>
+      <div class="field"><label>Blocked locations (0.25 mile radius each)</label></div>
+      <div class="adList" id="adList"></div>
+      <div class="adAddRow">
+        <button id="adAdd">Add blocked location on map</button>
+        <button class="ghost" id="adClear">Clear all</button>
+      </div>
+      <p class="adHint">Click <b>Add blocked location</b>, then click anywhere on the map to place a 0.25-mile protection circle there. While inside a circle the API feed is paused.</p>
+      <div class="row">
+        <button class="ghost" id="settingsClose">Close</button>
+      </div>
     </div>
   </div>
 
@@ -323,7 +444,40 @@
   let lastTrail = null;
   let fwdTimer = null;
   let lastKnown = null;
-  let routeGeo = [];
+
+  // ---------------- AD Protection (block-out areas) ----------------
+  const AD_RADIUS_M = 402.336; // 0.25 mile
+  let adZones = [];
+  let adEnabled = true;
+  let adAdding = false;
+  const adLayer = L.layerGroup().addTo(map);
+
+  // Stored per device (localStorage) — never linked to a user account (GDPR-safe).
+  function loadAD() {
+    try { adZones = JSON.parse(localStorage.getItem('mbt_adzones') || '[]'); } catch (e) { adZones = []; }
+    try { adEnabled = localStorage.getItem('mbt_adon') !== '0'; } catch (e) {}
+  }
+  function saveAD() {
+    localStorage.setItem('mbt_adzones', JSON.stringify(adZones));
+    localStorage.setItem('mbt_adon', adEnabled ? '1' : '0');
+  }
+  function drawAD() {
+    adLayer.clearLayers();
+    adZones.forEach(z => {
+      L.circle([z.lat, z.lng], { radius: AD_RADIUS_M, color: '#ef4444', weight: 2, fillColor: '#ef4444', fillOpacity: .12 }).addTo(adLayer);
+      L.marker([z.lat, z.lng], {
+        icon: L.divIcon({ className: '', html: '<div class="wp-marker" style="background:#ef4444"><small>AD</small>⛔</div>', iconSize: [34, 34], iconAnchor: [17, 17] }),
+        interactive: false
+      }).addTo(adLayer);
+    });
+  }
+  function inADZone(lat, lng) {
+    if (!adEnabled) return false;
+    for (const z of adZones) {
+      if (L.latLng(z.lat, z.lng).distanceTo([lat, lng]) < AD_RADIUS_M) return true;
+    }
+    return false;
+  }
 
   function loadAuth() {
     try { return JSON.parse(localStorage.getItem('mbt_auth') || 'null'); } catch (e) { return null; }
@@ -353,9 +507,10 @@
   const stepBus = document.getElementById('stepBus');
   const busSelect = document.getElementById('busSelect');
   const routeSelect = document.getElementById('routeSelect');
-  const snapCheck = document.getElementById('snapCheck');
   const companyNext = document.getElementById('companyNext');
   const backCompany = document.getElementById('backCompany');
+  const moveBtn = document.getElementById('moveBtn');
+  const settingsModal = document.getElementById('settingsModal');
 
   let opsCache = [];
   let fleetCache = [];
@@ -458,6 +613,9 @@
       const res = await apiReq('/user/', { user_id: uid, code: code }, 'login');
       auth = { username: res.username || 'user', user_id: res.id, session_key: res.session_key };
       saveAuth();
+      drawAD();
+      updateMenuAccount();
+      if (vehicle) updateChip();
       loginStep = 1; loginBuf = ''; loginRemember.id = '';
       await openSetup();
       loginModal.classList.remove('show');
@@ -534,7 +692,6 @@
   async function onOperatorChange(opId) {
     fleetCache = [];
     routesCache = [];
-    routeGeo = [];
     busSelect.innerHTML = '<option value="">Loading…</option>';
     routeSelect.innerHTML = '<option value="">Loading…</option>';
     try {
@@ -568,45 +725,8 @@
 
   async function onRouteChange() {
     const id = parseInt(routeSelect.value);
-    routeGeo = [];
     const r = routesCache.find(x => x.id === id);
     if (!r) return;
-    try {
-      const res = await apiReq('/routes/' + id + '/stops/', null, 'stops');
-      const stops = res.stops || [];
-      const coords = [];
-      stops.forEach(s => {
-        const cords = s.cords || s.coords;
-        if (cords && typeof cords === 'string') {
-          const [a, b] = cords.split(',');
-          const lat = parseFloat(a), lng = parseFloat(b);
-          if (!isNaN(lat) && !isNaN(lng)) coords.push([lat, lng]);
-        } else if (s.lat != null && s.lng != null) {
-          const lat = parseFloat(s.lat), lng = parseFloat(s.lng);
-          if (!isNaN(lat) && !isNaN(lng)) coords.push([lat, lng]);
-        }
-      });
-      routeGeo = coords;
-    } catch (e) {
-      routeGeo = [];
-    }
-  }
-
-  function snapPoint(lat, lng) {
-    if (!routeGeo || routeGeo.length < 2) return [lat, lng];
-    let best = null;
-    let bestD = Infinity;
-    for (let i = 0; i < routeGeo.length - 1; i++) {
-      const a = routeGeo[i], b = routeGeo[i + 1];
-      const dx = b[0] - a[0], dy = b[1] - a[1];
-      const len2 = dx * dx + dy * dy;
-      let t = len2 ? ((lat - a[0]) * dx + (lng - a[1]) * dy) / len2 : 0;
-      t = Math.max(0, Math.min(1, t));
-      const px = a[0] + t * dx, py = a[1] + t * dy;
-      const d = (lat - px) * (lat - px) + (lng - py) * (lng - py);
-      if (d < bestD) { bestD = d; best = [px, py]; }
-    }
-    return best || [lat, lng];
   }
 
   function applyBusSelection() {
@@ -626,12 +746,343 @@
     auth = null;
     vehicle = null;
     routeObj = null;
-    routeGeo = [];
     saveAuth();
     setupModal.classList.remove('show');
     updateChip();
     if (tracking) stopTracking();
     setStatus('Idle');
+    openLogin();
+  }
+
+  // ---------------- AD Protection UI ----------------
+  function renderADList() {
+    const list = document.getElementById('adList');
+    list.innerHTML = '';
+    if (!adZones.length) {
+      list.innerHTML = '<div class="adItem"><span class="adDot"></span><div class="adInfo">No blocked locations yet.<small>Add one from the map.</small></div></div>';
+      return;
+    }
+    adZones.forEach((z, i) => {
+      const d = document.createElement('div');
+      d.className = 'adItem';
+      d.innerHTML = '<span class="adDot"></span><div class="adInfo">Blocked #' + (i + 1) +
+        '<small>' + z.lat.toFixed(5) + ', ' + z.lng.toFixed(5) + ' · 0.25 mi</small></div>' +
+        '<button class="adDel" data-i="' + i + '">✕</button>';
+      d.querySelector('.adDel').addEventListener('click', () => {
+        adZones.splice(i, 1);
+        saveAD();
+        drawAD();
+        renderADList();
+      });
+      list.appendChild(d);
+    });
+  }
+
+  function openSettings() {
+    document.getElementById('adEnabled').checked = adEnabled;
+    document.getElementById('adEnabledLabel').textContent = adEnabled ? 'On' : 'Off';
+    renderADList();
+    settingsModal.classList.add('show');
+  }
+
+  // ---------------- Click-to-move (multi-waypoint missions) ----------------
+  const OSRM_URL = 'https://router.project-osrm.org/route/v1/driving/';
+  const FALLBACK_SPEED_MS = 13.4; // 30 mph, used only when no online road data
+  let waypoints = [];
+  let wpPins = [];
+  let wpPreview = null;
+  let moveActive = false;
+  let moveDist = 0;
+  let moveSegs = [];
+  let moveSpeeds = []; // per-segment road speeds (m/s) from OSRM
+  let moveIdx = 0;
+  let moveT0 = 0;
+  let moveLast = null;
+
+  function wpIconHTML(idx) {
+    return '<div class="wp-pin">' +
+      '<button class="wp-plus" data-i="' + idx + '">+</button>' +
+      '<button class="wp-minus" data-i="' + idx + '">−</button>' +
+      '<div class="wp-num">' + (idx + 1) + '</div>' +
+      '</div>';
+  }
+
+  function refreshWaypointPins() {
+    wpPins.forEach(m => map.removeLayer(m));
+    wpPins = [];
+    waypoints.forEach((w, i) => {
+      const m = L.marker(w, {
+        icon: L.divIcon({ className: '', html: wpIconHTML(i), iconSize: [44, 52], iconAnchor: [22, 30] }),
+        draggable: true,
+        zIndexOffset: 500
+      }).addTo(map);
+      m.on('dragend', (ev) => {
+        waypoints[i] = [ev.target.getLatLng().lat, ev.target.getLatLng().lng];
+        drawMovePreview();
+      });
+      const el = m.getElement();
+      if (el) {
+        const plus = el.querySelector('.wp-plus');
+        const minus = el.querySelector('.wp-minus');
+        if (plus) plus.addEventListener('click', (e) => { e.stopPropagation(); addWaypoint(waypoints[i]); });
+        if (minus) minus.addEventListener('click', (e) => { e.stopPropagation(); removeWaypoint(i); });
+      }
+      wpPins.push(m);
+    });
+    drawMovePreview();
+    updateMoveBtn();
+  }
+
+  function addWaypoint(w) {
+    waypoints.push(w);
+    refreshWaypointPins();
+    setStatus('Waypoint ' + waypoints.length + ' added — click map for more, press Move', '');
+  }
+
+  function removeWaypoint(i) {
+    if (i < 0 || i >= waypoints.length) return;
+    waypoints.splice(i, 1);
+    refreshWaypointPins();
+    setStatus('Waypoint removed — ' + waypoints.length + ' remaining', '');
+  }
+
+  function updateMoveBtn() {
+    if (waypoints.length) {
+      moveBtn.classList.add('live');
+      moveBtn.textContent = 'Move (' + waypoints.length + ')';
+    } else {
+      moveBtn.classList.remove('live');
+      moveBtn.textContent = 'Move';
+    }
+  }
+
+  function clearWaypoints() {
+    waypoints = [];
+    refreshWaypointPins();
+    moveBtn.classList.remove('live');
+    moveBtn.textContent = 'Move';
+  }
+
+  function pickWaypoint(e) {
+    if (adAdding) return;
+    if (moveActive) return;
+    addWaypoint([e.latlng.lat, e.latlng.lng]);
+  }
+
+  // Decode Google-encoded polyline (as returned in OSRM step geometries)
+  function decodePolyline(str) {
+    const coords = [];
+    let index = 0, lat = 0, lng = 0;
+    while (index < str.length) {
+      let result = 0, shift = 0, b;
+      do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lat += (result & 1 ? ~(result >> 1) : (result >> 1));
+      result = 0; shift = 0;
+      do { b = str.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lng += (result & 1 ? ~(result >> 1) : (result >> 1));
+      coords.push([lat / 1e5, lng / 1e5]);
+    }
+    return coords;
+  }
+
+  // Parse OSM maxspeed tags into mph (free online data, via Overpass API).
+  function parseMaxspeed(val) {
+    if (!val) return null;
+    const v = String(val).trim().toLowerCase();
+    if (v === 'none' || v === 'signals' || v === 'variable') return 70;
+    if (v === 'walk' || v === 'foot') return 5;
+    if (v === 'gb:national' || v === 'uk:national') return 60;
+    if (v === 'gb:motorway' || v === 'uk:motorway') return 70;
+    const m = v.match(/^(\d+(?:\.\d+)?)\s*(mph|km\/?h)?$/);
+    if (m) {
+      const n = parseFloat(m[1]);
+      return (m[2] === 'mph') ? n : n * 0.6214; // km/h -> mph
+    }
+    return null;
+  }
+
+  // Look up the real speed limits along the route from OSM (Overpass).
+  // Overrides moveSpeeds with the actual posted limit of the road under each
+  // segment; segments without a tagged limit keep the OSRM step speed.
+  async function applyRealSpeedLimits() {
+    if (moveSegs.length < 2) return;
+    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    moveSegs.forEach(p => {
+      minLat = Math.min(minLat, p[0]); maxLat = Math.max(maxLat, p[0]);
+      minLng = Math.min(minLng, p[1]); maxLng = Math.max(maxLng, p[1]);
+    });
+    const pad = 0.004;
+    const bbox = [minLat - pad, minLng - pad, maxLat + pad, maxLng + pad].join(',');
+    const q = '[out:json][timeout:25];way["highway"]["maxspeed"](' + bbox + ');out tags geom;';
+    const mirrors = [
+      'https://overpass-api.de/api/interpreter?data=',
+      'https://overpass.kumi.systems/api/interpreter?data=',
+      'https://maps.mail.ru/osm/tools/overpass/api/interpreter?data='
+    ];
+    let elements = [];
+    for (const m of mirrors) {
+      try {
+        const r = await fetch(m + encodeURIComponent(q));
+        const j = await r.json();
+        if (j && j.elements) { elements = j.elements; break; }
+      } catch (e) { /* try next mirror */ }
+    }
+    if (!elements.length) return;
+    const ways = elements.filter(w => w.type === 'way' && w.geometry && w.geometry.length);
+    if (!ways.length) return;
+    const limits = [];
+    for (let i = 0; i < moveSegs.length - 1; i++) {
+      const mid = [(moveSegs[i][0] + moveSegs[i + 1][0]) / 2, (moveSegs[i][1] + moveSegs[i + 1][1]) / 2];
+      let best = Infinity, mph = null;
+      for (const w of ways) {
+        const t = w.tags || {};
+        const ms = parseMaxspeed(t.maxspeed || t['maxspeed:forward'] || t['maxspeed:backward'] || t['maxspeed:type']);
+        if (ms == null) continue;
+        for (const g of w.geometry) {
+          const d = L.latLng(mid).distanceTo([g.lat, g.lon]);
+          if (d < best) { best = d; mph = ms; }
+        }
+      }
+      limits.push((best < 25 && mph != null) ? mph * 0.44704 : null);
+    }
+    for (let i = 0; i < limits.length; i++) {
+      if (limits[i] != null && moveSpeeds[i]) moveSpeeds[i] = limits[i];
+    }
+  }
+
+  async function computeMoveRoute() {
+    if (wpPreview) { map.removeLayer(wpPreview); wpPreview = null; }
+    if (!waypoints.length) return;
+    const start = marker ? marker.getLatLng() : map.getCenter();
+    const coords = [[start.lat, start.lng]].concat(waypoints);
+    const url = OSRM_URL + coords.map(c => c[1] + ',' + c[0]).join(';') +
+      '?overview=false&steps=true&annotations=duration,distance';
+    try {
+      const resp = await fetch(url);
+      const j = await resp.json();
+      if (j.code === 'Ok' && j.routes && j.routes.length) {
+        const route = j.routes[0];
+        const segs = [];
+        const spds = [];
+        let prev = null;
+        (route.legs || []).forEach(leg => {
+          (leg.steps || []).forEach(step => {
+            // Each step covers one road with a real distance/duration -> real road speed
+            const spd = step.duration > 0 ? step.distance / step.duration : 0;
+            const pts = step.geometry ? decodePolyline(step.geometry) : [];
+            for (let i = 0; i < pts.length; i++) {
+              const p = pts[i];
+              if (prev && prev[0] === p[0] && prev[1] === p[1]) continue; // skip shared junction
+              if (prev) { segs.push(prev); spds.push(spd); }
+              prev = p;
+            }
+          });
+        });
+        if (prev) segs.push(prev);
+        if (segs.length >= 2 && spds.length >= 1) {
+          moveSegs = segs;
+          moveSpeeds = spds;
+          await applyRealSpeedLimits();
+          wpPreview = L.polyline(moveSegs, { color: '#00009C', weight: 4, opacity: .75, interactive: false }).addTo(map);
+          const mph = moveSpeeds.map(s => s * 2.23694);
+          const avg = Math.round(mph.reduce((a, b) => a + b, 0) / mph.length);
+          setStatus('Route found — real speed limits (avg ' + avg + ' mph) — press Move', '');
+          return;
+        }
+      }
+    } catch (e) { /* fall through to straight line */ }
+    moveSegs = coords;
+    moveSpeeds = [];
+    wpPreview = L.polyline(coords, { color: '#00009C', weight: 4, opacity: .75, dashArray: '4 6', interactive: false }).addTo(map);
+    setStatus('Straight-line route — press Move to drive (default speed)', '');
+  }
+
+  function drawMovePreview() {
+    if (wpPreview) { map.removeLayer(wpPreview); wpPreview = null; }
+    if (!waypoints.length) return;
+    const start = marker ? [marker.getLatLng().lat, marker.getLatLng().lng] : null;
+    const pts = start ? [start].concat(waypoints) : waypoints;
+    wpPreview = L.polyline(pts, {
+      color: '#00009C', weight: 3, dashArray: '6 6', opacity: .8, interactive: false
+    }).addTo(map);
+  }
+
+  function driveMove() {
+    if (!waypoints.length) { setStatus('Tap the map to add waypoints first', ''); return; }
+    if (moveActive) return;
+    if (!moveSegs || moveSegs.length < 2) computeMoveRoute().then(() => startDrive());
+    else startDrive();
+  }
+
+  function startDrive() {
+    moveDist = 0;
+    moveIdx = 0;
+    moveActive = true;
+    moveLast = null;
+    moveT0 = performance.now();
+    setStatus('Driving…', '');
+    moveBtn.textContent = '■ Stop Move';
+    moveBtn.classList.add('live');
+    requestAnimationFrame(moveTick);
+  }
+
+  function moveTick(now) {
+    if (!moveActive) return;
+    const dt = Math.min(0.25, (now - moveT0) / 1000);
+    moveT0 = now;
+    // Speed for the current road segment: real road speed from OSRM if we have
+    // it, otherwise the fallback default.
+    const curSpeed = moveSpeeds.length ? Math.max(0.8, moveSpeeds[moveIdx]) : FALLBACK_SPEED_MS;
+    moveDist += curSpeed * dt;
+    // advance while we have consumed the current segment
+    while (moveIdx < moveSegs.length - 1) {
+      const a = moveSegs[moveIdx];
+      const b = moveSegs[moveIdx + 1];
+      const segLen = Math.max(0.001, L.latLng(a).distanceTo(b));
+      if (moveDist < segLen) break;
+      moveDist -= segLen;
+      moveIdx++;
+    }
+    if (moveIdx >= moveSegs.length - 1) {
+      const end = moveSegs[moveSegs.length - 1];
+      moveTo(end, FALLBACK_SPEED_MS);
+      endMove(true);
+      return;
+    }
+    const a = moveSegs[moveIdx];
+    const b = moveSegs[moveIdx + 1];
+    const segLen = Math.max(0.001, L.latLng(a).distanceTo(b));
+    const t = Math.max(0, Math.min(1, moveDist / segLen));
+    const sp = moveSpeeds.length ? moveSpeeds[moveIdx] : FALLBACK_SPEED_MS;
+    moveTo([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], sp);
+    requestAnimationFrame(moveTick);
+  }
+
+  function moveTo(ll, speedMS) {
+    const prev = moveLast || (marker ? [marker.getLatLng().lat, marker.getLatLng().lng] : ll);
+    const dir = bearing(prev, ll);
+    if (!marker) createMarker(ll);
+    else marker.setLatLng(ll);
+    rotateIcon(dir);
+    points.push(ll);
+    updatePolyline();
+    lastKnown = { lat: ll[0], lng: ll[1], heading: dir };
+    simTime += 1;
+    updateReadoutSim(ll, dir, speedMS);
+    forwardPos(ll[0], ll[1], dir);
+    if (follow) map.panTo(ll, { animate: false });
+    moveLast = ll;
+  }
+
+  function endMove(completed) {
+    moveActive = false;
+    if (completed) {
+      setStatus('Arrived at final waypoint', '');
+      clearWaypoints();
+    } else {
+      setStatus('Move stopped', '');
+      updateMoveBtn();
+    }
   }
 
   // ---------------- MBT trip / position ----------------
@@ -683,15 +1134,14 @@
 
   async function forwardPos(lat, lng, heading) {
     if (!mbLive || !tripId || !auth) return;
+    if (inADZone(lat, lng)) {
+      setStatus('AD blocked — feed paused', '');
+      return;
+    }
     const now = Date.now();
     if (now - lastFwd < 2500) return;
     lastFwd = now;
     let sendLat = lat, sendLon = lng;
-    if (snapCheck && snapCheck.checked && routeGeo.length >= 2) {
-      const p = snapPoint(lat, lng);
-      sendLat = p[0];
-      sendLon = p[1];
-    }
     let sendTrail = false;
     if (!lastTrail || L.latLng(lastTrail.lat, lastTrail.lng).distanceTo([sendLat, sendLon]) >= 5) {
       lastTrail = { lat: sendLat, lng: sendLon };
@@ -765,7 +1215,7 @@
     const dir = bearing(points[points.length - 1], [ll.lat, ll.lng]);
     simTime += dist / SIM_SPEED;
     recordPoint([ll.lat, ll.lng], dir, simTime);
-    updateReadoutSim([ll.lat, ll.lng], dir, dist);
+    updateReadoutSim([ll.lat, ll.lng], dir, dist / SIM_SPEED);
     lastKnown = { lat: ll.lat, lng: ll.lng, heading: dir };
     forwardPos(ll.lat, ll.lng, dir);
   }
@@ -774,11 +1224,11 @@
     onDebugDrag(e);
   }
 
-  function updateReadoutSim(latLngArr, dir, dist) {
+  function updateReadoutSim(latLngArr, dir, speedMS) {
     document.getElementById('rLat').textContent = latLngArr[0].toFixed(6);
     document.getElementById('rLon').textContent = latLngArr[1].toFixed(6);
     document.getElementById('rAcc').textContent = 'sim';
-    document.getElementById('rSpd').textContent = (dist / SIM_SPEED).toFixed(1) + ' m/s (sim)';
+    document.getElementById('rSpd').textContent = (speedMS * 2.23694).toFixed(0) + ' mph (sim)';
     document.getElementById('rHead').textContent = dir.toFixed(0) + '°';
     document.getElementById('rPts').textContent = points.length;
     document.getElementById('rTime').textContent = fmtClock(simTime) + ' sim';
@@ -815,6 +1265,8 @@
   function startTracking() {
     if (!navigator.geolocation) { alert('Geolocation is not supported by this browser.'); return; }
     if (debugMode) setDebugMode(false);
+    if (moveActive) endMove(false);
+    clearWaypoints();
     tracking = true;
     follow = true;
     points = [];
@@ -848,6 +1300,7 @@
     tracking = false;
     if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
     releaseWakeLock();
+    if (moveActive) endMove(false);
     if (mbLive) stopLive();
     btn.classList.remove('live');
     btn.textContent = 'Start Tracking';
@@ -930,6 +1383,7 @@
   }
   function beaconLastPosition() {
     if (!mbLive || !tripId || !auth || !vehicle || !lastKnown || !navigator.sendBeacon) return;
+    if (inADZone(lastKnown.lat, lastKnown.lng)) return;
     const body = JSON.stringify({
       session_key: auth.session_key,
       lat: lastKnown.lat,
@@ -948,6 +1402,7 @@
 
   // ---------------- Event wiring ----------------
   btn.addEventListener('click', () => (tracking ? stopTracking() : startTracking()));
+  moveBtn.addEventListener('click', () => (moveActive ? endMove(false) : driveMove()));
   debugCheck.addEventListener('change', e => setDebugMode(e.target.checked));
   document.getElementById('centerBtn').addEventListener('click', () => {
     follow = true;
@@ -955,6 +1410,19 @@
   });
   map.on('dragstart', () => { follow = false; });
   map.on('zoomstart', () => { follow = false; });
+  map.on('click', (e) => {
+    if (adAdding) {
+      adZones.push({ lat: e.latlng.lat, lng: e.latlng.lng });
+      saveAD();
+      drawAD();
+      adAdding = false;
+      map.getContainer().style.cursor = '';
+      setStatus('Blocked location added', '');
+      return;
+    }
+    if (e.originalEvent && e.originalEvent.target && e.originalEvent.target.closest && e.originalEvent.target.closest('.direction-icon')) return;
+    if (!moveActive) pickWaypoint(e);
+  });
 
   function openLogin() {
     loginStep = 1; loginBuf = ''; loginRemember.id = '';
@@ -963,9 +1431,53 @@
     loginModal.classList.add('show');
   }
 
-  document.getElementById('accountBtn').addEventListener('click', () => {
+  // Burger menu
+  const burgerBtn = document.getElementById('burgerBtn');
+  const burgerMenu = document.getElementById('burgerMenu');
+  function updateMenuAccount() {
+    const sub = document.getElementById('menuAccountSub');
+    if (sub) sub.textContent = auth ? ('Signed in as ' + auth.username + (vehicle ? ' · ' + vehicle.fleet_number : '')) : 'Sign in to broadcast';
+  }
+  burgerBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    updateMenuAccount();
+    burgerMenu.classList.toggle('show');
+  });
+  document.addEventListener('click', (e) => {
+    if (!burgerMenu.contains(e.target) && e.target !== burgerBtn) burgerMenu.classList.remove('show');
+  });
+  document.getElementById('menuAccount').addEventListener('click', () => {
+    burgerMenu.classList.remove('show');
     if (auth) openSetup(); else openLogin();
   });
+  document.getElementById('menuSettings').addEventListener('click', () => {
+    burgerMenu.classList.remove('show');
+    openSettings();
+  });
+  document.getElementById('menuSignout').addEventListener('click', () => {
+    burgerMenu.classList.remove('show');
+    signOut();
+  });
+  document.getElementById('settingsClose').addEventListener('click', () => settingsModal.classList.remove('show'));
+  document.getElementById('adEnabled').addEventListener('change', (e) => {
+    adEnabled = e.target.checked;
+    document.getElementById('adEnabledLabel').textContent = adEnabled ? 'On' : 'Off';
+    saveAD();
+    drawAD();
+  });
+  document.getElementById('adAdd').addEventListener('click', () => {
+    settingsModal.classList.remove('show');
+    adAdding = true;
+    map.getContainer().style.cursor = 'crosshair';
+    setStatus('AD Protection: click the map to place a blocked location', '');
+  });
+  document.getElementById('adClear').addEventListener('click', () => {
+    adZones = [];
+    saveAD();
+    drawAD();
+    renderADList();
+  });
+
   document.getElementById('loginCancel').addEventListener('click', () => loginModal.classList.remove('show'));
   companyNext.addEventListener('click', onCompanyNext);
   backCompany.addEventListener('click', () => showStep('company'));
@@ -995,7 +1507,12 @@
   setInterval(tickClock, 1000);
 
   // Restore session on load
+  loadAD();
+  drawAD();
+  updateMenuAccount();
   if (auth && vehicle) updateChip();
+  // Default page is the login page — always show it on load
+  openLogin();
 </script>
 </body>
 </html>
