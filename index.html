@@ -1184,8 +1184,6 @@
         moveEvents[ev.idx] = ev; // green: no braking, but keep event for info
       }
     });
-    // bus stops get a braking curve so the bus can pull in and serve them
-    busStopsOnRoute.forEach(s => brakeToStop(s.idx));
     // final waypoint: brake to a stop at the end
     brakeToStop(n - 2);
   }
@@ -1355,25 +1353,16 @@
       }
     }
 
-    // natural pull-in at an unserved bus stop along the route
-    if (curSpeed < 0.4) {
-      const stopHere = busStopsOnRoute.find(s => s.idx === moveIdx && !s.served);
-      if (stopHere) {
-        stopHere.served = true;
-        stopHere.bell = false;
-        waitUntil = now + 8000;
-        waitLabel = 'light';
-        setStatus('Serving ' + stopHere.name + '…', '');
-        requestAnimationFrame(moveTick);
-        return;
-      }
-    }
-
     // arrive at a red light / give-way / stop junction segment while slow -> wait.
     // brakeToEvent stops the bus just BEFORE the event segment, so when stopped
-    // moveIdx points at the segment before it — check one ahead too.
+    // moveIdx points at the segment before it — check one ahead too. Only
+    // trigger when the event is actually within ~25m so the bus doesn't wait at
+    // a light that is still far down the road.
+    const busCum = (segCum[moveIdx] || 0) + moveDist;
     const ev = moveEvents[moveIdx] || moveEvents[moveIdx + 1];
-    if (ev && ev.type === 'junction' && curSpeed < 0.5 && !ev.done) {
+    const evCum = ev && segCum[ev.idx] !== undefined ? segCum[ev.idx] : null;
+    const evNear = evCum !== null && evCum - busCum >= -5 && evCum - busCum <= 25;
+    if (ev && evNear && ev.type === 'junction' && curSpeed < 0.5 && !ev.done) {
       ev.done = true;
       waitUntil = now + ev.waitMs;
       waitLabel = 'light';
@@ -1381,7 +1370,7 @@
       requestAnimationFrame(moveTick);
       return;
     }
-    if (ev && ev.type === 'light' && ev.state === 'red' && curSpeed < 0.5 && !ev.done) {
+    if (ev && evNear && ev.type === 'light' && ev.state === 'red' && curSpeed < 0.5 && !ev.done) {
       ev.done = true;
       waitUntil = now + ev.waitMs;
       waitLabel = 'light';
