@@ -1190,11 +1190,13 @@
 
   // Braking curve for an EVENT (red light / give-way / stop junction): the bus
   // must be (near) stationary when it REACHES the start of the event segment,
-  // so the wait logic (curSpeed < 0.5) can trigger reliably.
+  // so the wait logic (curSpeed < 0.5) can trigger reliably. The event segment
+  // itself keeps its normal road speed so the bus can drive through after the
+  // wait — only the segments BEFORE it are braked (i < stopSeg).
   function brakeToEvent(stopSeg) {
     if (!segCum || !segCum.length) return;
     const stopCum = segCum[Math.min(stopSeg, segCum.length - 1)];
-    for (let i = 0; i <= stopSeg; i++) {
+    for (let i = 0; i < stopSeg; i++) {
       const d = Math.max(0, stopCum - segCum[i]);
       const lim = Math.sqrt(2 * DECEL * d);
       if (lim < moveTargets[i]) moveTargets[i] = lim;
