@@ -418,7 +418,7 @@
   </div>
 
 <script>
-  const API_BASE = (new URLSearchParams(location.search).get('api') || 'https://staging.mybustimes.cc/api').replace(/\/$/, '');
+  const API_BASE = (new URLSearchParams(location.search).get('api') || 'https://www.mybustimes.cc/api').replace(/\/$/, '');
 
   // ---------------- Leaflet map ----------------
   const map = L.map('map', { zoomControl: true }).setView([0, 0], 2);
@@ -447,6 +447,7 @@
   let tracking = false;
   let follow = true;
   let smoothDir = null;
+  let lastHeading = null;
 
   let debugMode = false;
   let simTime = 0;
@@ -1303,6 +1304,7 @@
     moveIdx = 0;
     moveActive = true;
     moveLast = null;
+    smoothDir = null;
     curSpeed = 0;
     waitUntil = 0;
     waitLabel = '';
@@ -1411,7 +1413,12 @@
 
   function moveTo(ll, speedMS) {
     const prev = moveLast || (marker ? [marker.getLatLng().lat, marker.getLatLng().lng] : ll);
-    const dir = bearing(prev, ll);
+    // zero-length hop (e.g. t==0 on the first frame, or a duplicate route point):
+    // keep the current heading instead of snapping to 0 from atan2(0,0)
+    const dir = (prev[0] === ll[0] && prev[1] === ll[1])
+      ? (lastHeading !== null ? lastHeading : 0)
+      : bearing(prev, ll);
+    if (prev[0] !== ll[0] || prev[1] !== ll[1]) lastHeading = dir;
     if (!marker) createMarker(ll);
     else marker.setLatLng(ll);
     rotateIcon(dir);
